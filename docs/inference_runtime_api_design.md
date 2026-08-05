@@ -350,7 +350,7 @@ example, a first frame and an HD map frame should be distinct inputs even if
 both are image-like values.
 
 Model input metadata may also include a lightweight lifecycle label, such as
-runtime config, cache initialization, rollout binding, per-step input, or
+runtime config, cache initialization, rollout context, per-step input, or
 session update. This should remain query metadata, not model-specific tensor
 validation.
 

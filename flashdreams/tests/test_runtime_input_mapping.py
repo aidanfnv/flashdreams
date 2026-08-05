@@ -327,7 +327,7 @@ def test_optional_field_needs_mapping_support_to_be_available() -> None:
 
 def test_lifecycle_disagreement_blocks_a_field_match() -> None:
     model = InferenceInputSchema(
-        global_fields=(InputField(name="prompt", lifecycle="rollout_binding"),)
+        global_fields=(InputField(name="prompt", lifecycle="rollout_context"),)
     )
     mapping = InputMappingSchema(
         name="prompt",

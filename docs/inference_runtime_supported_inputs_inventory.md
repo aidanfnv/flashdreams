@@ -151,12 +151,15 @@ uses it, such as:
   such as FlashVSR input-video dimensions;
 - `cache_init`: values passed when initializing or resetting a rollout cache,
   such as prompts, first frames, view names, and precomputed embeddings;
-- `rollout_binding`: values bound after cache initialization but before AR
+- `rollout_context`: values bound after cache initialization but before AR
   steps, such as HY-WorldPlay action labels, camera tensors, and memory state;
 - `step_input`: values consumed for one generated chunk, such as HDMap frames,
   camera trajectories, driver commands, video chunks, and timestamps;
 - `session_update`: values that can update an active session when supported,
   such as LingBot text-event embedding swaps.
+
+Use `step_fields` plus `lifecycle="step_input"` for values supplied every step;
+`rollout_context` is for values supplied once and reused across AR steps.
 
 The lifecycle tag is metadata, not a new deep type system. If both a model field
 and mapping output specify lifecycle, compatibility should require them to agree.
@@ -201,7 +204,7 @@ The implementation that came out of this inventory is:
    and `step`. A non-empty global slot mid-rollout is an update request, not a
    reset; `InputField.update_policy` declares whether the model can apply it.
 5. Extend `InputField` with `update_policy`, `lifecycle`, and `metadata` so
-   models can distinguish runtime config, cache initialization, rollout binding,
+   models can distinguish runtime config, cache initialization, rollout context,
    per-step inputs, and supported active-session updates.
 6. Keep `InputMappingSchema` as the canonical-to-encoded boundary, with
    mapping-set compatibility helpers for composed mappings.
@@ -228,7 +231,7 @@ Use these conventions when adding future model schemas:
 - Use `semantic_type` for a coarse representation hint, such as `path`,
   `decoded_tensor`, `c2w_sequence`, `intrinsics_vec4_sequence`, or `embedding`.
 - Use `lifecycle` to say where the adapter consumes the value, such as
-  `runtime_config`, `cache_init`, `rollout_binding`, `step_input`, or
+  `runtime_config`, `cache_init`, `rollout_context`, `step_input`, or
   `session_update`.
 - Use `update_policy` to say when a value may change. `SESSION_START_ONLY` is
   the one reserved token, meaning the value cannot be swapped mid-rollout.
@@ -283,10 +286,10 @@ hy_worldplay_model = InferenceInputSchema(
     global_fields=(
         InputField(name="prompt", lifecycle="cache_init"),
         InputField(name="global_conditioning_frame", lifecycle="cache_init"),
-        InputField(name="action_labels", lifecycle="rollout_binding"),
-        InputField(name="camera_viewmats", lifecycle="rollout_binding"),
-        InputField(name="camera_intrinsics", lifecycle="rollout_binding"),
-        InputField(name="memory_config", lifecycle="rollout_binding"),
+        InputField(name="action_labels", lifecycle="rollout_context"),
+        InputField(name="camera_viewmats", lifecycle="rollout_context"),
+        InputField(name="camera_intrinsics", lifecycle="rollout_context"),
+        InputField(name="memory_config", lifecycle="rollout_context"),
     ),
 )
 ```
@@ -301,14 +304,14 @@ sana_wm_model = InferenceInputSchema(
         InputField(
             name="camera_trajectory_c2w",
             semantic_type="c2w_sequence",
-            lifecycle="rollout_binding",
+            lifecycle="rollout_context",
             metadata={"shape": "[F,4,4]", "coordinates": "opencv_c2w"},
         ),
         InputField(
             name="camera_intrinsics_vec4",
             required=False,
             semantic_type="intrinsics_vec4_sequence",
-            lifecycle="rollout_binding",
+            lifecycle="rollout_context",
             metadata={"shape": "[F,4]"},
         ),
     ),
