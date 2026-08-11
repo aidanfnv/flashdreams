@@ -61,6 +61,15 @@ PIPELINE_SANA_WM_STREAMING = StreamInferencePipelineConfig(
 )
 """FlashDreams SANA-WM streaming pipeline."""
 
+PIPELINE_CONFIGS: dict[str, StreamInferencePipelineConfig] = {
+    cfg.name: cfg
+    for cfg in (
+        PIPELINE_SANA_WM_BIDIRECTIONAL,
+        PIPELINE_SANA_WM_STREAMING,
+    )
+}
+"""SANA-WM pipeline configs keyed by ``name``."""
+
 RUNNER_SANA_WM_BIDIRECTIONAL = SanaWMRunnerConfig(
     runner_name=PIPELINE_SANA_WM_BIDIRECTIONAL.name,
     description="SANA-WM bidirectional I2V runner (Stage-1 DiT + LTX-2 refiner).",
@@ -88,6 +97,7 @@ RUNNER_CONFIGS: dict[str, RunnerConfig] = {
 """SANA-WM runner configs keyed by ``runner_name``."""
 
 __all__ = [
+    "PIPELINE_CONFIGS",
     "PIPELINE_SANA_WM_BIDIRECTIONAL",
     "PIPELINE_SANA_WM_STREAMING",
     "RUNNER_CONFIGS",

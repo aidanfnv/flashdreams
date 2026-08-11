@@ -16,12 +16,14 @@
 """SANA-WM runners for FlashDreams."""
 
 from sana_wm.config import (
+    PIPELINE_CONFIGS,
     RUNNER_CONFIGS,
     RUNNER_SANA_WM_BIDIRECTIONAL,
     RUNNER_SANA_WM_STREAMING,
 )
 
 __all__ = [
+    "PIPELINE_CONFIGS",
     "RUNNER_CONFIGS",
     "RUNNER_SANA_WM_BIDIRECTIONAL",
     "RUNNER_SANA_WM_STREAMING",

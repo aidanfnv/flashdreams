@@ -28,12 +28,11 @@ from loguru import logger
 
 from flashdreams.infra.config import derive_config
 from flashdreams.infra.pipeline import StreamInferencePipelineConfig
+from flashdreams.infra.postprocess import VideoTensorLayout
 from flashdreams.infra.runner import Runner, RunnerConfig
-from flashdreams.infra.runner_io import (
-    ensure_output_dir,
-    resolve_prompt_value,
-    runner_artifact_path,
-)
+from flashdreams.infra.runner_io import resolve_prompt_value, runner_artifact_path
+from flashdreams.runtime.demo import DemoSpec, Mp4OutputSpec, OutputSpec
+from flashdreams.runtime.demo.replay import run_replay_demo
 from sana_wm.camera import (
     action_string_to_c2w,
     default_intrinsics_vec4,
@@ -42,11 +41,6 @@ from sana_wm.camera import (
     resize_center_crop_geometry,
     snap_num_frames,
     transform_intrinsics_for_crop,
-)
-from sana_wm.conditioning import (
-    SanaWMI2VConditioningRequest,
-    SanaWMStreamingI2VConditioningRequest,
-    streaming_chunk_boundaries,
 )
 from sana_wm.constants import (
     DEFAULT_ACTION,
@@ -68,7 +62,13 @@ from sana_wm.constants import (
     SANA_WM_STREAMING_REFINER_ROOT,
     SANA_WM_VAE_TEMPORAL_COMPRESSION,
 )
-from sana_wm.decoder import SanaWMDecodedVideo
+from sana_wm.demo import SanaWMDemoAdapter
+from sana_wm.runtime import (
+    SANA_WM_MODEL_ID,
+    SanaWMRunnerOutputTarget,
+    inference_config_from_runner_config,
+    inference_input_from_prepared_inputs,
+)
 
 SamplingAlgo = Literal["auto", "flow_euler_ltx"]
 """Sampling algorithms exposed by the SANA-WM runner."""
@@ -130,6 +130,9 @@ class SanaWMRunnerConfig(RunnerConfig):
 
     fps: int = DEFAULT_FPS
     """Output video frame rate."""
+
+    postprocess_output_layout: VideoTensorLayout | None = "tchw"
+    """Pipeline output layout for runtime output collection."""
 
     step: int = 60
     """Stage-1 DiT sampling steps."""
@@ -262,15 +265,7 @@ class SanaWMRunner(Runner[SanaWMRunnerConfig, Any]):
     config: SanaWMRunnerConfig
 
     def __init__(self, config: SanaWMRunnerConfig) -> None:
-        self.config = config
-        self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-        if torch.distributed.is_initialized():
-            self.world_size = torch.distributed.get_world_size()
-            self.global_rank = torch.distributed.get_rank()
-        else:
-            self.world_size = int(os.environ.get("WORLD_SIZE", "1"))
-            self.global_rank = int(os.environ.get("RANK", "0"))
-        self.is_rank_zero = self.global_rank == 0
+        super().__init__(_effective_runner_config(config))
 
     def _resolve_prompt(self) -> str:
         """Resolve the prompt from inline text or ``prompt_path``."""
@@ -283,13 +278,7 @@ class SanaWMRunner(Runner[SanaWMRunnerConfig, Any]):
 
     def _resolve_device(self) -> torch.device:
         """Return the device used by SANA-WM."""
-        if self.config.device == "auto":
-            if torch.cuda.is_available():
-                return torch.device(f"cuda:{self.local_rank}")
-            return torch.device("cpu")
-        if self.config.device == "cuda" and torch.cuda.is_available():
-            return torch.device(f"cuda:{self.local_rank}")
-        return torch.device(self.config.device)
+        return _resolve_runner_device(self.config.device, self.local_rank)
 
     def _resolve_trajectory(self, *, num_frames: int) -> np.ndarray:
         """Load, fit, or roll out the camera-to-world trajectory."""
@@ -322,88 +311,57 @@ class SanaWMRunner(Runner[SanaWMRunnerConfig, Any]):
         )
 
     def run(self) -> None:
-        """Run SANA-WM bidirectional inference and write outputs."""
+        """Drive a SANA-WM rollout through the runtime API path."""
         cfg = self.config
         if cfg.image_path is None:
-            raise ValueError("SanaWMRunner requires --image-path.")
+            raise ValueError(f"{type(self).__name__} requires --image-path.")
 
-        device = self._resolve_device()
-        quant_backend = _resolve_quant_backend(
-            cfg.quant_backend,
-            _active_quantized_precisions(
-                stage1_precision=cfg.stage1_precision,
-                refiner_precision=cfg.refiner_precision,
-                refiner_enabled=not cfg.no_refiner,
-            ),
-        )
-        _validate_precision_request(
-            device=device,
-            stage1_precision=cfg.stage1_precision,
-            refiner_precision=cfg.refiner_precision,
-            refiner_enabled=not cfg.no_refiner,
-            quant_backend=cfg.quant_backend,
-        )
         prompt = self._resolve_prompt()
         image, c2w, intrinsics_vec4, num_frames = self._prepare_inputs()
-        pipeline_cfg = _pipeline_config(
-            cfg,
-            quant_backend=quant_backend,
+        adapter = SanaWMDemoAdapter()
+        spec = DemoSpec(
+            model_id=SANA_WM_MODEL_ID,
+            preset_id=str(cfg.pipeline.name),
+            input_mode="replay",
+            output=Mp4OutputSpec(
+                path=runner_artifact_path(cfg.output_dir, cfg.runner_name, "mp4"),
+                fps=cfg.fps,
+                output_layout=cfg.postprocess_output_layout or "tchw",
+            ),
+            scenario=inference_input_from_prepared_inputs(
+                prompt=prompt,
+                image=image,
+                poses_c2w=c2w,
+                intrinsics_vec4=intrinsics_vec4,
+                negative_prompt=cfg.negative_prompt,
+            ),
+            config=inference_config_from_runner_config(
+                cfg,
+                device=self._runtime_device_string(),
+                pipeline=self.pipeline,
+                num_frames=num_frames,
+            ),
         )
-        pipeline = pipeline_cfg.setup().to(device).eval()
-        sampling_algo = self._sampling_algo()
-        if sampling_algo != "flow_euler_ltx":
-            raise ValueError(
-                "SANA-WM requires flow_euler_ltx for the "
-                f"bidirectional runner; got {sampling_algo!r}."
+
+        def _output_target_factory(output_spec: OutputSpec) -> SanaWMRunnerOutputTarget:
+            del output_spec
+            return SanaWMRunnerOutputTarget(
+                output_stream=self.create_video_output_stream(fps=cfg.fps),
+                output_dir=cfg.output_dir,
+                runner_name=cfg.runner_name,
+                fps=cfg.fps,
+                enabled=self.is_rank_zero,
             )
-        cache = pipeline.initialize_cache(
-            decoder_context={
-                "prompt": prompt,
-                "fps": cfg.fps,
-                "save_stage1": cfg.save_stage1,
-                "refiner_seed": cfg.refiner_seed,
-                "sink_size": cfg.sink_size,
-            }
+
+        result = run_replay_demo(
+            spec=spec,
+            adapter=adapter,
+            output_target_factory=_output_target_factory,
         )
-        with torch.inference_mode():
-            decoded = pipeline.generate(
-                0,
-                cache,
-                input=SanaWMI2VConditioningRequest(
-                    image=image,
-                    prompt=prompt,
-                    poses_c2w=c2w,
-                    intrinsics_vec4=intrinsics_vec4,
-                    num_frames=num_frames,
-                    fps=cfg.fps,
-                    steps=cfg.step,
-                    cfg_scale=cfg.cfg_scale,
-                    flow_shift=cfg.flow_shift,
-                    seed=cfg.seed,
-                    negative_prompt=cfg.negative_prompt,
-                ),
-            )
-        pipeline.finalize(0, cache)
-        if not isinstance(decoded, SanaWMDecodedVideo):
-            raise TypeError(
-                "SANA-WM pipeline decoder returned "
-                f"{type(decoded).__name__}, expected SanaWMDecodedVideo."
-            )
-        if not self.is_rank_zero:
-            return
-        ensure_output_dir(cfg.output_dir)
-        _write_video(
-            runner_artifact_path(cfg.output_dir, cfg.runner_name, "mp4"),
-            decoded.video_hwc,
-            cfg.fps,
-        )
-        if decoded.stage1_video_hwc is not None:
-            _write_video(
-                runner_artifact_path(
-                    cfg.output_dir, f"{cfg.runner_name}_stage1", "mp4"
-                ),
-                decoded.stage1_video_hwc,
-                cfg.fps,
+        if result.status != "completed":
+            raise RuntimeError(
+                f"SANA-WM runner failed with status {result.status!r}: "
+                f"{result.reason or result.error or 'unknown error'}"
             )
 
     def _prepare_inputs(self) -> tuple[object, np.ndarray, np.ndarray, int]:
@@ -474,6 +432,12 @@ class SanaWMRunner(Runner[SanaWMRunnerConfig, Any]):
         """Return the required pixel-frame stride for this runner."""
         return SANA_WM_VAE_TEMPORAL_COMPRESSION
 
+    def _runtime_device_string(self) -> str:
+        """Return the runtime device string for this rank."""
+        if torch.distributed.is_initialized():
+            return f"cuda:{self.local_rank}"
+        return self.config.device
+
 
 class SanaWMStreamingRunner(SanaWMRunner):
     """CLI driver for SANA-WM streaming configs."""
@@ -481,107 +445,61 @@ class SanaWMStreamingRunner(SanaWMRunner):
     config: SanaWMStreamingRunnerConfig
 
     def run(self) -> None:
-        """Run SANA-WM streaming inference and write outputs."""
-        cfg = self.config
-        if cfg.image_path is None:
-            raise ValueError("SanaWMStreamingRunner requires --image-path.")
-
-        device = self._resolve_device()
-        quant_backend = _resolve_quant_backend(
-            cfg.quant_backend,
-            _active_quantized_precisions(
-                stage1_precision=cfg.stage1_precision,
-                refiner_precision=cfg.refiner_precision,
-                refiner_enabled=not cfg.no_refiner,
-            ),
-        )
-        _validate_precision_request(
-            device=device,
-            stage1_precision=cfg.stage1_precision,
-            refiner_precision=cfg.refiner_precision,
-            refiner_enabled=not cfg.no_refiner,
-            quant_backend=cfg.quant_backend,
-        )
-        prompt = self._resolve_prompt()
-        image, c2w, intrinsics_vec4, num_frames = self._prepare_inputs()
-        pipeline_cfg = _streaming_pipeline_config(
-            cfg,
-            quant_backend=quant_backend,
-        )
-        pipeline = pipeline_cfg.setup().to(device).eval()
-        latent_frames = (num_frames - 1) // SANA_WM_VAE_TEMPORAL_COMPRESSION + 1
-        chunk_boundaries = streaming_chunk_boundaries(
-            latent_frames,
-            cfg.num_frame_per_block,
-        )
-        cache = pipeline.initialize_cache(
-            decoder_context={
-                "prompt": prompt,
-                "fps": cfg.fps,
-                "save_stage1": cfg.save_stage1,
-                "refiner_seed": cfg.refiner_seed,
-                "sink_size": cfg.sink_size,
-                "block_size": cfg.refiner_block_size,
-                "refiner_kv_max_frames": cfg.refiner_kv_max_frames,
-            }
-        )
-        request = SanaWMStreamingI2VConditioningRequest(
-            image=image,
-            prompt=prompt,
-            poses_c2w=c2w,
-            intrinsics_vec4=intrinsics_vec4,
-            num_frames=num_frames,
-            fps=cfg.fps,
-            steps=cfg.step,
-            cfg_scale=cfg.cfg_scale,
-            flow_shift=cfg.flow_shift,
-            seed=cfg.seed,
-            negative_prompt=cfg.negative_prompt,
-            num_frame_per_block=cfg.num_frame_per_block,
-        )
-
-        decoded_chunks: list[np.ndarray] = []
-        stage1_chunks: list[np.ndarray] = []
-        with torch.inference_mode():
-            for ar_idx in range(len(chunk_boundaries) - 1):
-                decoded = pipeline.generate(ar_idx, cache, input=request)
-                pipeline.finalize(ar_idx, cache)
-                if not isinstance(decoded, SanaWMDecodedVideo):
-                    raise TypeError(
-                        "SANA-WM streaming pipeline decoder returned "
-                        f"{type(decoded).__name__}, expected SanaWMDecodedVideo."
-                    )
-                if decoded.video_hwc.size:
-                    decoded_chunks.append(decoded.video_hwc)
-                if (
-                    decoded.stage1_video_hwc is not None
-                    and decoded.stage1_video_hwc.size
-                ):
-                    stage1_chunks.append(decoded.stage1_video_hwc)
-
-        if not self.is_rank_zero:
-            return
-        ensure_output_dir(cfg.output_dir)
-        if not decoded_chunks:
-            raise RuntimeError("SANA-WM streaming produced no decoded frames.")
-        video_hwc = np.concatenate(decoded_chunks, axis=0)
-        _write_video(
-            runner_artifact_path(cfg.output_dir, cfg.runner_name, "mp4"),
-            video_hwc,
-            cfg.fps,
-        )
-        if stage1_chunks:
-            _write_video(
-                runner_artifact_path(
-                    cfg.output_dir, f"{cfg.runner_name}_stage1", "mp4"
-                ),
-                np.concatenate(stage1_chunks, axis=0),
-                cfg.fps,
-            )
+        """Drive a SANA-WM streaming rollout through the runtime API path."""
+        super().run()
 
     def _frame_snap_stride(self) -> int:
         """Return the streaming pixel-frame chunk stride."""
         return SANA_WM_VAE_TEMPORAL_COMPRESSION * self.config.num_frame_per_block
+
+
+def _effective_runner_config(
+    cfg: SanaWMRunnerConfig,
+) -> SanaWMRunnerConfig:
+    """Derive the pipeline config that the base runner should instantiate."""
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    device = _resolve_runner_device(cfg.device, local_rank)
+    quantized = _active_quantized_precisions(
+        stage1_precision=cfg.stage1_precision,
+        refiner_precision=cfg.refiner_precision,
+        refiner_enabled=not cfg.no_refiner,
+    )
+    quant_backend = _resolve_quant_backend(cfg.quant_backend, quantized)
+    _validate_precision_request(
+        device=device,
+        stage1_precision=cfg.stage1_precision,
+        refiner_precision=cfg.refiner_precision,
+        refiner_enabled=not cfg.no_refiner,
+        quant_backend=cfg.quant_backend,
+    )
+    pipeline_cfg = _runner_pipeline_config(cfg, quant_backend=quant_backend)
+    return derive_config(
+        cfg,
+        device=str(device),
+        pipeline=pipeline_cfg,
+    )
+
+
+def _resolve_runner_device(device: str, local_rank: int) -> torch.device:
+    """Resolve the SANA-WM runner's ``auto`` and bare ``cuda`` device choices."""
+    if device == "auto":
+        if torch.cuda.is_available():
+            return torch.device(f"cuda:{local_rank}")
+        return torch.device("cpu")
+    if device == "cuda" and torch.cuda.is_available():
+        return torch.device(f"cuda:{local_rank}")
+    return torch.device(device)
+
+
+def _runner_pipeline_config(
+    cfg: SanaWMRunnerConfig,
+    *,
+    quant_backend: ResolvedQuantBackend,
+) -> StreamInferencePipelineConfig:
+    """Return the effective pipeline config for a SANA-WM runner variant."""
+    if isinstance(cfg, SanaWMStreamingRunnerConfig):
+        return _streaming_pipeline_config(cfg, quant_backend=quant_backend)
+    return _pipeline_config(cfg, quant_backend=quant_backend)
 
 
 def _pipeline_config(
@@ -711,15 +629,6 @@ def _streaming_pipeline_config(
             ),
         ),
     )
-
-
-def _write_video(path: Path, video_hwc: np.ndarray, fps: int) -> Path:
-    """Write an HWC uint8 video to ``path``."""
-    import imageio.v3 as iio
-
-    iio.imwrite(path, video_hwc, fps=fps)
-    logger.info("Saved {}", path)
-    return path
 
 
 def _validate_precision_request(

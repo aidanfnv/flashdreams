@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,6 +29,8 @@ import sana_wm._tools as tools_module
 import sana_wm.conditioning as conditioning_module
 import sana_wm.decoder as decoder_module
 import sana_wm.refiner as refiner_module
+import sana_wm.runner as runner_module
+import sana_wm.runtime as runtime_module
 import torch
 
 if sys.version_info >= (3, 11):
@@ -41,12 +44,12 @@ from sana_wm.conditioning import (
     SanaWMConditioningEncoderConfig,
     SanaWMFirstFrameEncoderConfig,
     SanaWMStreamingConditioningEncoderConfig,
-    SanaWMStreamingI2VConditioningRequest,
     SanaWMTextPromptEncoderConfig,
     SanaWMTextPromptRequest,
     streaming_chunk_boundaries,
 )
 from sana_wm.config import (
+    PIPELINE_CONFIGS,
     PIPELINE_SANA_WM_BIDIRECTIONAL,
     PIPELINE_SANA_WM_STREAMING,
     RUNNER_CONFIGS,
@@ -66,6 +69,7 @@ from sana_wm.constants import (
     SANA_WM_STREAMING_REFINER_KV_MAX_FRAMES,
     SANA_WM_STREAMING_REFINER_ROOT,
 )
+from sana_wm.demo import SanaWMDemoAdapter
 from sana_wm.decoder import (
     SanaWMDecodedVideo,
     SanaWMLTX2LatentRefinerConfig,
@@ -96,6 +100,19 @@ from sana_wm.runner import (
     _streaming_pipeline_config,
     _validate_precision_request,
 )
+from sana_wm.runtime import (
+    FIELD_CAMERA_INTRINSICS_VEC4,
+    FIELD_CAMERA_TRAJECTORY_C2W,
+    FIELD_GLOBAL_CONDITIONING_FRAME,
+    FIELD_NEGATIVE_PROMPT,
+    FIELD_PROMPT,
+    SANA_WM_MODEL_ID,
+    SanaWMModelAdapter,
+    SanaWMRunnerOutputTarget,
+    decoded_video_to_step_result,
+    inference_config_from_runner_config,
+    video_hwc_uint8_to_tchw_normalized,
+)
 from sana_wm.scheduler import (
     SanaWMLTXEulerScheduler,
     SanaWMLTXEulerSchedulerConfig,
@@ -124,6 +141,13 @@ from sana_wm.transformer import (
 from flashdreams.infra.config import derive_config
 from flashdreams.infra.decoder import StreamingVideoDecoder
 from flashdreams.infra.diffusion.model import DiffusionModel
+from flashdreams.runtime import (
+    InferenceConfig,
+    InferenceInput,
+    OutputArtifact,
+    StepResult,
+)
+from flashdreams.runtime.demo import DemoSpec, Mp4OutputSpec, RunResult
 
 pytestmark = pytest.mark.ci_cpu
 
@@ -135,6 +159,14 @@ def test_runner_config_is_registered() -> None:
     assert RUNNER_CONFIGS == {
         "sana-wm-bidirectional": RUNNER_SANA_WM_BIDIRECTIONAL,
         "sana-wm-streaming": RUNNER_SANA_WM_STREAMING,
+    }
+
+
+def test_pipeline_configs_are_registered_for_runtime_adapter() -> None:
+    """Expose SANA-WM pipeline presets for runtime adapter lookup."""
+    assert PIPELINE_CONFIGS == {
+        "sana-wm-bidirectional": PIPELINE_SANA_WM_BIDIRECTIONAL,
+        "sana-wm-streaming": PIPELINE_SANA_WM_STREAMING,
     }
 
 
@@ -150,6 +182,57 @@ def test_runner_has_description() -> None:
     """Provide non-empty CLI help text for the runner registry."""
     assert RUNNER_SANA_WM_BIDIRECTIONAL.description.strip()
     assert RUNNER_SANA_WM_STREAMING.description.strip()
+
+
+def test_sana_runtime_adapter_schema_matches_branch_docs() -> None:
+    """Keep SANA-WM model inputs on the branch runtime schema boundary."""
+    adapter = SanaWMModelAdapter()
+    schema = adapter.inference_input_schema
+
+    assert adapter.model_id == SANA_WM_MODEL_ID
+    assert adapter.canonical_input_schema is None
+    assert adapter.default_input_mapping() is not None
+    assert schema.step_fields == ()
+    assert [field.name for field in schema.global_conditioning_fields] == [
+        FIELD_PROMPT,
+        FIELD_NEGATIVE_PROMPT,
+        FIELD_GLOBAL_CONDITIONING_FRAME,
+        FIELD_CAMERA_TRAJECTORY_C2W,
+        FIELD_CAMERA_INTRINSICS_VEC4,
+    ]
+    negative = schema.field_for(
+        name=FIELD_NEGATIVE_PROMPT,
+        phase="global_conditioning",
+    )
+    camera = schema.field_for(
+        name=FIELD_CAMERA_TRAJECTORY_C2W,
+        phase="global_conditioning",
+    )
+    intrinsics = schema.field_for(
+        name=FIELD_CAMERA_INTRINSICS_VEC4,
+        phase="global_conditioning",
+    )
+    assert negative is not None and negative.required is False
+    assert camera is not None
+    assert camera.input_modality == "c2w_sequence"
+    assert camera.frequency_consumed == "per_step"
+    assert camera.metadata == {
+        "shape": "[F,4,4]",
+        "coordinates": "opencv_c2w",
+    }
+    assert intrinsics is not None and intrinsics.required is False
+    assert intrinsics.metadata == {"shape": "[F,4]"}
+    all_names = {
+        field.name
+        for field in (
+            *schema.global_conditioning_fields,
+            *schema.step_fields,
+        )
+    }
+    assert "num_frames" not in all_names
+    assert "fps" not in all_names
+    assert "stage1_sampling" not in all_names
+    assert "streaming_chunking" not in all_names
 
 
 def test_pipeline_uses_sana_diffusion_model() -> None:
@@ -331,6 +414,97 @@ def test_streaming_runner_pipeline_config_routes_runtime_fields_to_components() 
     assert scheduler.num_inference_steps == 4
     assert scheduler.shift == 8.0
     assert scheduler.denoising_step_list == (1000, 500, 100, 0)
+
+
+def test_runtime_config_keeps_sampling_and_chunking_out_of_input_schema() -> None:
+    """Route execution knobs through ``InferenceConfig.runtime_options``."""
+    pipeline = object()
+    cfg = derive_config(
+        RUNNER_SANA_WM_STREAMING,
+        step=4,
+        cfg_scale=1.0,
+        flow_shift=8.0,
+        sampling_algo="auto",
+        seed=123,
+        num_frame_per_block=5,
+        num_cached_blocks=3,
+        denoising_step_list=(1000, 500, 100, 0),
+        refiner_block_size=5,
+        refiner_kv_max_frames=17,
+        no_sink_token=True,
+    )
+
+    runtime_config = inference_config_from_runner_config(
+        cfg,
+        device="cpu",
+        pipeline=pipeline,
+        num_frames=41,
+    )
+    options = runtime_config.runtime_options
+    adapter_options = SanaWMModelAdapter().runtime_options(runtime_config)
+
+    assert isinstance(runtime_config, InferenceConfig)
+    assert runtime_config.model_id == SANA_WM_MODEL_ID
+    assert runtime_config.preset_id == "sana-wm-streaming"
+    assert runtime_config.device == "cpu"
+    assert runtime_config.seed == 123
+    assert options["pipeline"] is pipeline
+    assert options["pipeline_config"] is cfg.pipeline
+    assert options["variant"] == "streaming"
+    assert options["num_frames"] == 41
+    assert options["fps"] == cfg.fps
+    assert options["steps"] == 4
+    assert options["sampling_algo"] == "flow_euler_ltx"
+    assert options["num_frame_per_block"] == 5
+    assert options["num_cached_blocks"] == 3
+    assert options["denoising_step_list"] == (1000, 500, 100, 0)
+    assert options["refiner_block_size"] == 5
+    assert options["refiner_kv_max_frames"] == 17
+    assert options["no_sink_token"] is True
+    assert adapter_options.variant == "streaming"
+    assert adapter_options.num_frames == 41
+    assert adapter_options.num_frame_per_block == 5
+
+
+def test_sana_demo_adapter_prepares_fixed_replay_scenario(tmp_path: Path) -> None:
+    """Adapt fixed SANA model inputs to the shared replay demo boundary."""
+    image = SimpleNamespace(size=(1280, 704))
+    poses = np.tile(np.eye(4, dtype=np.float32), (9, 1, 1))
+    intrinsics = np.zeros((9, 4), dtype=np.float32)
+    inputs = runtime_module.inference_input_from_prepared_inputs(
+        prompt="drive forward",
+        image=image,
+        poses_c2w=poses,
+        intrinsics_vec4=intrinsics,
+    )
+    config = InferenceConfig(
+        model_id=SANA_WM_MODEL_ID,
+        preset_id="sana-wm-bidirectional",
+        runtime_options={
+            "pipeline_config": PIPELINE_SANA_WM_BIDIRECTIONAL,
+            "num_frames": 9,
+        },
+    )
+    spec = DemoSpec(
+        model_id=SANA_WM_MODEL_ID,
+        preset_id="sana-wm-bidirectional",
+        input_mode="replay",
+        output=Mp4OutputSpec(path=tmp_path / "demo.mp4", fps=16),
+        scenario=inputs,
+        config=config,
+    )
+
+    adapter = SanaWMDemoAdapter()
+    prepared = adapter.prepare_scenario(spec)
+
+    assert prepared.initial_inputs is inputs
+    assert prepared.source_schema.description == "fixed SANA-WM replay input"
+    assert prepared.metadata == {
+        "model_id": SANA_WM_MODEL_ID,
+        "preset_id": "sana-wm-bidirectional",
+    }
+    assert adapter.supported_input_modes() == ("replay",)
+    assert adapter.supported_output_modes() == ("mp4", "null")
 
 
 def test_sana_ltx_scheduler_step_pins_zero_timestep_tokens() -> None:
@@ -1111,6 +1285,146 @@ def test_video_decoder_returns_structured_video(
     assert decoded.stage1_video_hwc is None
 
 
+def test_decoded_video_to_step_result_uses_layout_aware_runtime_output() -> None:
+    """Convert SANA-WM ``uint8`` HWC decoder output to canonical ``tchw``."""
+    video = np.array(
+        [
+            [[[0, 127, 255]]],
+            [[[255, 127, 0]]],
+        ],
+        dtype=np.uint8,
+    )
+    stage1 = np.full((1, 1, 1, 3), 127, dtype=np.uint8)
+
+    tensor = video_hwc_uint8_to_tchw_normalized(video)
+    result = decoded_video_to_step_result(
+        SanaWMDecodedVideo(video_hwc=video, stage1_video_hwc=stage1),
+        step_index=3,
+        metrics={"model_step_s": 0.5},
+        frame_start=4,
+        fps=2,
+    )
+
+    assert tensor.shape == (2, 3, 1, 1)
+    torch.testing.assert_close(tensor[0, :, 0, 0], torch.tensor([-1.0, -1 / 255, 1.0]))
+    assert result.step_index == 3
+    assert result.layout == "tchw"
+    assert result.frame_count == 2
+    assert result.output_window is not None
+    assert result.output_window.start_s == 2.0
+    assert result.output_window.end_s == 3.0
+    assert result.metrics["model_step_s"] == 0.5
+    assert result.metadata["source_format"] == "uint8_hwc"
+    stage1_chunk = result.metadata["stage1_video_chunk"]
+    assert isinstance(stage1_chunk, torch.Tensor)
+    assert stage1_chunk.shape == (1, 3, 1, 1)
+    assert result.metadata["stage1_layout"] == "tchw"
+
+
+def test_sana_runner_output_target_writes_stage1_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Route main and Stage-1 outputs through runtime output targets."""
+    created: list[Any] = []
+
+    class FakeMp4VideoOutputTarget:
+        def __init__(
+            self,
+            *,
+            output_path: Path,
+            fps: int | float,
+            output_layout: str,
+            install_hint: str,
+            enabled: bool = True,
+            **_kwargs: object,
+        ) -> None:
+            del fps, install_hint
+            self.output_path = output_path
+            self.output_layout = output_layout
+            self.enabled = enabled
+            self.writes: list[torch.Tensor] = []
+            created.append(self)
+
+        def open(self) -> None:
+            return None
+
+        def write(self, result: object) -> None:
+            assert hasattr(result, "video_chunk")
+            self.writes.append(cast(Any, result).video_chunk)
+
+        def close(self) -> tuple[OutputArtifact, ...]:
+            if not self.enabled:
+                return ()
+            return (
+                OutputArtifact(
+                    kind="video/mp4",
+                    uri=str(self.output_path),
+                    metadata={"source_layout": self.output_layout},
+                ),
+            )
+
+    class FakeOutputStream:
+        output_layout = "tchw"
+
+        def __init__(self) -> None:
+            self.metadata: dict[str, object] | None = None
+
+        def process(
+            self,
+            video_chunk: torch.Tensor,
+            *,
+            autoregressive_index: int,
+            metrics: object,
+            metadata: dict[str, object],
+            output_window: object,
+        ) -> object:
+            del metrics, output_window
+            self.metadata = metadata
+            return StepResult.from_video_chunk(
+                step_index=autoregressive_index,
+                video_chunk=video_chunk,
+                layout="tchw",
+                metadata=metadata,
+            )
+
+        def finish(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        runtime_module, "Mp4VideoOutputTarget", FakeMp4VideoOutputTarget
+    )
+    output_stream = FakeOutputStream()
+    target = SanaWMRunnerOutputTarget(
+        output_stream=cast(Any, output_stream),
+        output_dir=tmp_path,
+        runner_name="sana-wm-bidirectional",
+        fps=16,
+    )
+    result = decoded_video_to_step_result(
+        SanaWMDecodedVideo(
+            video_hwc=np.zeros((1, 1, 1, 3), dtype=np.uint8),
+            stage1_video_hwc=np.full((1, 1, 1, 3), 255, dtype=np.uint8),
+        ),
+        step_index=0,
+    )
+
+    target.open()
+    target.write(result)
+    artifacts = target.close()
+
+    assert len(created) == 2
+    assert created[0].output_path == tmp_path / "sana-wm-bidirectional.mp4"
+    assert created[1].output_path == tmp_path / "sana-wm-bidirectional_stage1.mp4"
+    assert len(created[0].writes) == 1
+    assert len(created[1].writes) == 1
+    assert output_stream.metadata == {"source_format": "uint8_hwc"}
+    assert [Path(artifact.uri).name for artifact in artifacts] == [
+        "sana-wm-bidirectional.mp4",
+        "sana-wm-bidirectional_stage1.mp4",
+    ]
+
+
 def test_streaming_video_decoder_emits_only_new_frames(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1821,6 +2135,93 @@ def test_streaming_runner_setup_preserves_cli_fields() -> None:
     assert isinstance(runner, SanaWMStreamingRunner)
     assert runner.config.image_path == Path("missing.png")
     assert runner.config.num_frame_per_block == 5
+
+
+def test_runner_delegates_to_runtime_api_with_direct_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Keep the CLI runner on the runtime path, not the old rollout loop."""
+    from PIL import Image
+
+    image_path = tmp_path / "frame.png"
+    Image.new("RGB", (64, 36), color=(10, 20, 30)).save(image_path)
+    cfg = derive_config(
+        RUNNER_SANA_WM_BIDIRECTIONAL,
+        image_path=image_path,
+        prompt="drive forward",
+        intrinsics_path=None,
+        action="w-1",
+        num_frames=9,
+        device="cpu",
+        output_dir=tmp_path,
+    )
+    runner = object.__new__(SanaWMRunner)
+    pipeline = object()
+    output_stream = object()
+    captured: dict[str, object] = {}
+
+    def _fake_run_replay_demo(**kwargs: object) -> RunResult:
+        captured.update(kwargs)
+        return RunResult(status="completed")
+
+    monkeypatch.setattr(
+        runner,
+        "create_video_output_stream",
+        lambda **_kwargs: output_stream,
+    )
+    monkeypatch.setattr(
+        runner_module,
+        "run_replay_demo",
+        _fake_run_replay_demo,
+    )
+    runner.config = cfg
+    runner.pipeline = pipeline
+    runner.local_rank = 0
+    runner.world_size = 1
+    runner.global_rank = 0
+    runner.is_rank_zero = True
+
+    runner.run()
+
+    spec = captured["spec"]
+    assert isinstance(spec, DemoSpec)
+    assert spec.model_id == SANA_WM_MODEL_ID
+    assert spec.input_mode == "replay"
+    assert spec.preset_id == str(cfg.pipeline.name)
+    assert isinstance(captured["adapter"], SanaWMDemoAdapter)
+    runtime_config = spec.config
+    assert isinstance(runtime_config, InferenceConfig)
+    assert runtime_config.model_id == SANA_WM_MODEL_ID
+    assert runtime_config.device == "cpu"
+    assert runtime_config.runtime_options["pipeline"] is pipeline
+    assert runtime_config.runtime_options["num_frames"] == 9
+    assert runtime_config.runtime_options["sampling_algo"] == "flow_euler_ltx"
+    scenario = spec.scenario
+    assert isinstance(scenario, InferenceInput)
+    payload = scenario.global_conditioning
+    assert payload[FIELD_PROMPT] == "drive forward"
+    assert payload[FIELD_GLOBAL_CONDITIONING_FRAME].size == (
+        1280,
+        704,
+    )
+    assert payload[FIELD_CAMERA_TRAJECTORY_C2W].shape == (9, 4, 4)
+    assert payload[FIELD_CAMERA_INTRINSICS_VEC4].shape == (9, 4)
+    output_spec = spec.output
+    assert isinstance(output_spec, Mp4OutputSpec)
+    assert output_spec.path == tmp_path / "sana-wm-bidirectional.mp4"
+    assert output_spec.fps == cfg.fps
+    assert output_spec.output_layout == "tchw"
+    output_target_factory = cast(
+        Callable[[Mp4OutputSpec], SanaWMRunnerOutputTarget],
+        captured["output_target_factory"],
+    )
+    assert callable(output_target_factory)
+    output = output_target_factory(output_spec)
+    assert isinstance(output, SanaWMRunnerOutputTarget)
+    assert output.output_stream is output_stream
+    assert output.output_dir == tmp_path
+    assert output.enabled is True
 
 
 def test_runner_derives_intrinsics_when_omitted(tmp_path: Path) -> None:
