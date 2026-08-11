@@ -355,7 +355,7 @@ PY
     echo "[setup] seeding TransformerEngine build tools in isolated venv"
     ( cd "${SANA_TEST_DIR}" && \
         uv venv --allow-existing --python "3.12" .venv >/dev/null && \
-        uv pip install --python .venv/bin/python setuptools wheel pybind11 )
+        uv pip install --python .venv/bin/python setuptools wheel pybind11 cmake ninja )
 elif [[ "${LOW_PRECISION}" == "1" ]]; then
     echo "[setup] skipping TransformerEngine quant extra; low-precision rows are FlashDreams-only."
 fi
