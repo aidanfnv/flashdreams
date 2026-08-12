@@ -228,8 +228,10 @@ if _is_quant_precision "${STAGE1_PRECISION}" || _is_quant_precision "${REFINER_P
     LOW_PRECISION=1
 fi
 UPSTREAM_QUANT=0
+UPSTREAM_QUANT_SYNC_ARGS=()
 if [[ "${LOW_PRECISION}" == "1" && "${SANA_WM_VARIANT}" == "streaming" && "${BENCH_SIDE}" != "flashdreams" ]]; then
     UPSTREAM_QUANT=1
+    UPSTREAM_QUANT_SYNC_ARGS=(--extra quant --inexact)
 fi
 
 if _is_true "${BENCH_DRY_RUN}"; then
@@ -240,6 +242,7 @@ if _is_true "${BENCH_DRY_RUN}"; then
     echo "        precision: stage1=${STAGE1_PRECISION} refiner=${REFINER_PRECISION}"
     if [[ "${UPSTREAM_QUANT}" == "1" ]]; then
         echo "        upstream quant extra: yes"
+        echo "        quant sync: uv sync ${UPSTREAM_QUANT_SYNC_ARGS[*]}"
     else
         echo "        upstream quant extra: no"
     fi
@@ -330,7 +333,24 @@ UV_SYNC_ENV=()
 NVTE_ARCH_MARKER="${SANA_TEST_DIR}/.venv/.flashdreams_nvte_cuda_archs"
 NVTE_MARK_ARCH=0
 if [[ "${UPSTREAM_QUANT}" == "1" ]]; then
-    UV_SYNC_ARGS+=(--extra quant)
+    # TransformerEngine is intentionally absent from the base environment. Its
+    # non-isolated build needs the resolved PyTorch/CUDA stack plus a small set
+    # of build tools in the target venv. Bootstrap the base environment first
+    # for direct streaming FP8/FP4 invocations that do not have a prior BF16
+    # row, then keep the manually seeded tools during the quant sync. A later
+    # non-quant (exact) sync removes TransformerEngine and these extra tools.
+    if [[ ! -x "${SANA_TEST_DIR}/.venv/bin/python" ]] || \
+        ! ( cd "${SANA_TEST_DIR}" && .venv/bin/python - <<'PY' )
+import importlib.util
+
+raise SystemExit(0 if importlib.util.find_spec("torch") else 1)
+PY
+    then
+        echo "[setup] bootstrapping base Python deps before TransformerEngine build"
+        ( cd "${SANA_TEST_DIR}" && uv sync )
+    fi
+
+    UV_SYNC_ARGS+=("${UPSTREAM_QUANT_SYNC_ARGS[@]}")
     export NVTE_FRAMEWORK="${NVTE_FRAMEWORK:-pytorch}"
     export NVTE_WITH_NCCL_EP="${NVTE_WITH_NCCL_EP:-0}"
     NVTE_MARK_ARCH=1

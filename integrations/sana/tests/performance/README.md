@@ -29,11 +29,15 @@ algorithms.
 The base isolated environment covers BF16 and FlashDreams FP8/FP4 rows.
 Only upstream `SANA-WM_streaming` FP8/FP4 comparison rows opt into the `quant`
 extra, which builds TransformerEngine from the pinned git source against the
-local CUDA/PyTorch stack. The harness seeds Python build tools, CMake, and
-Ninja into the isolated venv before that build. A new checkout needs network
-access for `uv sync`, GitHub access for the pinned upstream checkout, and the
-local CUDA compiler/toolchain plus TransformerEngine source access only when
-running those upstream streaming low-precision comparisons.
+local CUDA/PyTorch stack. For a direct low-precision invocation, the harness
+first syncs the base environment when PyTorch is absent. It then seeds only the
+Python build tools, CMake, and Ninja needed by TransformerEngine and preserves
+them with an inexact quant sync while building it. Ordinary non-quant syncs
+remain exact, so they remove TransformerEngine and those manually seeded tools.
+A new checkout needs network access for `uv sync`, GitHub access for the pinned
+upstream checkout, and the local CUDA compiler/toolchain plus TransformerEngine
+source access only when running those upstream streaming low-precision
+comparisons.
 
 ## Run Benchmarks
 
