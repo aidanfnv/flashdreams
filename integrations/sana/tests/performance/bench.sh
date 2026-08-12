@@ -242,7 +242,7 @@ if _is_true "${BENCH_DRY_RUN}"; then
     echo "        precision: stage1=${STAGE1_PRECISION} refiner=${REFINER_PRECISION}"
     if [[ "${UPSTREAM_QUANT}" == "1" ]]; then
         echo "        upstream quant extra: yes"
-        echo "        quant sync: uv sync ${UPSTREAM_QUANT_SYNC_ARGS[*]}"
+        echo "        quant sync: uv sync --frozen ${UPSTREAM_QUANT_SYNC_ARGS[*]}"
     else
         echo "        upstream quant extra: no"
     fi
@@ -305,7 +305,7 @@ if [[ -n "${BENCH_PRECISIONS}" ]]; then
     fi
     echo "[bench] aggregating precision sweep -> ${OUTPUT_DIR}/bench.md"
     ( cd "${SANA_TEST_DIR}" && \
-        uv run python "${SCRIPT_DIR}/bench_sweep_summary.py" \
+        uv run --no-sync python "${SCRIPT_DIR}/bench_sweep_summary.py" \
             "${SWEEP_ITEMS[@]}" \
             --output-json "${OUTPUT_DIR}/bench.json" \
             --output-md "${OUTPUT_DIR}/bench.md" \
@@ -328,7 +328,7 @@ fi
 UPSTREAM_COMMIT="$(git rev-parse HEAD)"
 FLASHDREAMS_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || printf "unknown")"
 
-UV_SYNC_ARGS=(uv sync)
+UV_SYNC_ARGS=(uv sync --frozen)
 UV_SYNC_ENV=()
 NVTE_ARCH_MARKER="${SANA_TEST_DIR}/.venv/.flashdreams_nvte_cuda_archs"
 NVTE_MARK_ARCH=0
@@ -347,7 +347,7 @@ raise SystemExit(0 if importlib.util.find_spec("torch") else 1)
 PY
     then
         echo "[setup] bootstrapping base Python deps before TransformerEngine build"
-        ( cd "${SANA_TEST_DIR}" && uv sync )
+        ( cd "${SANA_TEST_DIR}" && uv sync --frozen )
     fi
 
     UV_SYNC_ARGS+=("${UPSTREAM_QUANT_SYNC_ARGS[@]}")
@@ -473,7 +473,7 @@ _run_upstream_once() {
     if [[ "${SANA_WM_VARIANT}" == "streaming" ]]; then
         upstream_cmd=(
             env "PYTHONPATH=${UPSTREAM_PYTHONPATH}"
-            uv run python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm_streaming.py"
+            uv run --no-sync python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm_streaming.py"
             --image "${IMAGE_PATH}"
             --prompt "${PROMPT_PATH}"
             "${UPSTREAM_STREAMING_CAMERA_ARGS[@]}"
@@ -501,7 +501,7 @@ _run_upstream_once() {
     else
         upstream_cmd=(
             env "PYTHONPATH=${UPSTREAM_PYTHONPATH}"
-            uv run python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm.py"
+            uv run --no-sync python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm.py"
             --image "${IMAGE_PATH}"
             --prompt "${PROMPT_PATH}"
             --camera "${CAMERA_PATH}"
@@ -538,7 +538,7 @@ _run_flashdreams_once() {
 
     if [[ "${SANA_WM_VARIANT}" == "streaming" ]]; then
         flashdreams_cmd=(
-            uv run python "${SANA_TEST_DIR}/run_flashdreams_streaming.py"
+            uv run --no-sync python "${SANA_TEST_DIR}/run_flashdreams_streaming.py"
             --image-path "${IMAGE_PATH}"
             --prompt-path "${PROMPT_PATH}"
             "${FLASHDREAMS_STREAMING_CAMERA_ARGS[@]}"
@@ -565,7 +565,7 @@ _run_flashdreams_once() {
         )
     else
         flashdreams_cmd=(
-            uv run python "${SANA_TEST_DIR}/run_flashdreams_bidirectional.py"
+            uv run --no-sync python "${SANA_TEST_DIR}/run_flashdreams_bidirectional.py"
             --image-path "${IMAGE_PATH}"
             --prompt-path "${PROMPT_PATH}"
             --camera-path "${CAMERA_PATH}"
@@ -622,7 +622,7 @@ if [[ "${SANA_WM_VARIANT}" == "bidirectional" ]]; then
     SUMMARY_WARMUP_RUNS="${BIDIRECTIONAL_WARMUP_GENERATIONS}"
 fi
 SUMMARY_ARGS=(
-    uv run python "${SCRIPT_DIR}/bench_summary.py"
+    uv run --no-sync python "${SCRIPT_DIR}/bench_summary.py"
     --variant "${SANA_WM_VARIANT}"
     --bench-side "${BENCH_SIDE}"
     --warmup-runs "${SUMMARY_WARMUP_RUNS}"

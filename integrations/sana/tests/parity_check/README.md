@@ -23,10 +23,11 @@ Shared harness files live one level up in `integrations/sana/tests/`:
 - `run_flashdreams_*.py` - FlashDreams entrypoint wrappers shared with the
   performance harness.
 
-`run.sh` runs `uv sync` from `integrations/sana/tests/`, reuses or clones the
-upstream checkout at `../Sana`, pins it to `6298508`, and applies patches
-idempotently. The patches add instrumentation and do not change generation
-algorithms.
+`run.sh` runs `uv sync --frozen` from `integrations/sana/tests/`, reuses or
+clones the upstream checkout at `../Sana`, pins it to `6298508`, and applies
+patches idempotently. Freezing the committed lock avoids preparing metadata for
+optional git dependencies that are not part of a parity run. The patches add
+instrumentation and do not change generation algorithms.
 
 ## Run Checks
 

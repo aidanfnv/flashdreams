@@ -123,7 +123,7 @@ fi
 echo "[run] upstream SANA-WM streaming -> ${UPSTREAM_OUT}"
 ( cd "${SANA_TEST_DIR}" && \
     PYTHONPATH="${UPSTREAM_PYTHONPATH}" \
-    uv run python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm_streaming.py" \
+    uv run --no-sync python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm_streaming.py" \
         --image "${IMAGE_PATH}" \
         --prompt "${PROMPT_PATH}" \
         "${UPSTREAM_CAMERA_ARGS[@]}" \
@@ -153,7 +153,7 @@ echo "[run] upstream SANA-WM streaming -> ${UPSTREAM_OUT}"
 
 echo "[run] FlashDreams SANA-WM streaming -> ${FLASHDREAMS_OUT}"
 ( cd "${SANA_TEST_DIR}" && \
-    uv run python "${SANA_TEST_DIR}/run_flashdreams_streaming.py" \
+    uv run --no-sync python "${SANA_TEST_DIR}/run_flashdreams_streaming.py" \
         --image-path "${IMAGE_PATH}" \
         --prompt-path "${PROMPT_PATH}" \
         "${FLASHDREAMS_CAMERA_ARGS[@]}" \
@@ -181,14 +181,14 @@ echo "[run] FlashDreams SANA-WM streaming -> ${FLASHDREAMS_OUT}"
 
 echo "[diff] summarising streaming frame parity -> ${OUTPUT_DIR}/parity.json"
 ( cd "${SANA_TEST_DIR}" && \
-    uv run python "${PARITY_SCRIPT_DIR}/diff_parity.py" \
+    uv run --no-sync python "${PARITY_SCRIPT_DIR}/diff_parity.py" \
         --upstream "${UPSTREAM_FRAMES}" \
         --flashdreams "${FLASHDREAMS_FRAMES}" \
         --output "${OUTPUT_DIR}/parity.json" )
 
 echo "[diff] summarising streaming continuity -> ${OUTPUT_DIR}/continuity.json"
 ( cd "${SANA_TEST_DIR}" && \
-    uv run python "${PARITY_SCRIPT_DIR}/streaming_continuity.py" \
+    uv run --no-sync python "${PARITY_SCRIPT_DIR}/streaming_continuity.py" \
         --upstream "${UPSTREAM_FRAMES}" \
         --flashdreams "${FLASHDREAMS_FRAMES}" \
         --chunk-size "$(( STREAMING_REFINER_BLOCK_SIZE * 8 ))" \

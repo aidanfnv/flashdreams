@@ -534,9 +534,35 @@ def test_bench_script_quant_extra_is_upstream_streaming_low_precision_only(
     assert result.returncode == 0
     assert f"upstream quant extra: {expected_quant}" in result.stdout
     if expected_quant == "yes":
-        assert "quant sync: uv sync --extra quant --inexact" in result.stdout
+        assert (
+            "quant sync: uv sync --frozen --extra quant --inexact" in result.stdout
+        )
     else:
         assert "quant sync:" not in result.stdout
+
+
+def test_sana_harness_freezes_setup_and_disables_implicit_run_syncs() -> None:
+    bench_script = Path("integrations/sana/tests/performance/bench.sh").read_text(
+        encoding="utf-8"
+    )
+    common_script = Path("integrations/sana/tests/common.sh").read_text(
+        encoding="utf-8"
+    )
+    parity_scripts = [
+        Path("integrations/sana/tests/parity_check/run_bidirectional.sh").read_text(
+            encoding="utf-8"
+        ),
+        Path("integrations/sana/tests/parity_check/run_streaming.sh").read_text(
+            encoding="utf-8"
+        ),
+    ]
+
+    assert "UV_SYNC_ARGS=(uv sync --frozen)" in bench_script
+    assert "uv sync --frozen" in common_script
+    for script in [bench_script, *parity_scripts]:
+        uv_run_lines = [line for line in script.splitlines() if "uv run" in line]
+        assert uv_run_lines
+        assert all("uv run --no-sync" in line for line in uv_run_lines)
 
 
 def test_benchmark_summary_keeps_frame_normalized_diagnostics() -> None:

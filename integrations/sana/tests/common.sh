@@ -83,8 +83,8 @@ sana_test_prepare_sana_repo() {
 }
 
 sana_test_sync_venv() {
-    echo "[setup] ensuring Python deps via uv sync (isolated venv)"
-    ( cd "${SANA_TEST_DIR}" && uv sync )
+    echo "[setup] ensuring Python deps via uv sync --frozen (isolated venv)"
+    ( cd "${SANA_TEST_DIR}" && uv sync --frozen )
 }
 
 sana_test_upstream_pythonpath() {

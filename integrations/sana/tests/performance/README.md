@@ -21,10 +21,12 @@ Shared harness files live one level up in `integrations/sana/tests/`:
 - `compat/` - small upstream import compatibility shims.
 - `run_flashdreams_*.py` - FlashDreams entrypoint wrappers shared with parity.
 
-`bench.sh` runs `uv sync` from `integrations/sana/tests/`, reuses or clones the
-upstream checkout at `../Sana`, pins it to `6298508`, and applies patches
-idempotently. The patches add instrumentation and do not change generation
-algorithms.
+`bench.sh` runs `uv sync --frozen` from `integrations/sana/tests/`, reuses or
+clones the upstream checkout at `../Sana`, pins it to `6298508`, and applies
+patches idempotently. Freezing the committed lock prevents uv from preparing
+metadata for the optional TransformerEngine git source during ordinary BF16 or
+FlashDreams-only setup. The patches add instrumentation and do not change
+generation algorithms.
 
 The base isolated environment covers BF16 and FlashDreams FP8/FP4 rows.
 Only upstream `SANA-WM_streaming` FP8/FP4 comparison rows opt into the `quant`
@@ -32,8 +34,10 @@ extra, which builds TransformerEngine from the pinned git source against the
 local CUDA/PyTorch stack. For a direct low-precision invocation, the harness
 first syncs the base environment when PyTorch is absent. It then seeds only the
 Python build tools, CMake, and Ninja needed by TransformerEngine and preserves
-them with an inexact quant sync while building it. Ordinary non-quant syncs
-remain exact, so they remove TransformerEngine and those manually seeded tools.
+them with a frozen, inexact quant sync while building it. Benchmark commands
+run with `uv run --no-sync`, so uv cannot replace the selected environment
+between setup and launch. Ordinary non-quant syncs remain exact, so they remove
+TransformerEngine and those manually seeded tools.
 A new checkout needs network access for `uv sync`, GitHub access for the pinned
 upstream checkout, and the local CUDA compiler/toolchain plus TransformerEngine
 source access only when running those upstream streaming low-precision

@@ -88,7 +88,7 @@ FLASHDREAMS_PRECISION_ARGS=(
 echo "[run] upstream SANA-WM bidirectional -> ${UPSTREAM_OUT}"
 ( cd "${SANA_TEST_DIR}" && \
     PYTHONPATH="${UPSTREAM_PYTHONPATH}" \
-    uv run python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm.py" \
+    uv run --no-sync python "${SANA_REPO}/inference_video_scripts/wm/inference_sana_wm.py" \
         --image "${IMAGE_PATH}" \
         --prompt "${PROMPT_PATH}" \
         --camera "${CAMERA_PATH}" \
@@ -110,7 +110,7 @@ echo "[run] upstream SANA-WM bidirectional -> ${UPSTREAM_OUT}"
 
 echo "[run] FlashDreams SANA-WM bidirectional -> ${FLASHDREAMS_OUT}"
 ( cd "${SANA_TEST_DIR}" && \
-    uv run python "${SANA_TEST_DIR}/run_flashdreams_bidirectional.py" \
+    uv run --no-sync python "${SANA_TEST_DIR}/run_flashdreams_bidirectional.py" \
         --image-path "${IMAGE_PATH}" \
         --prompt-path "${PROMPT_PATH}" \
         --camera-path "${CAMERA_PATH}" \
@@ -131,7 +131,7 @@ echo "[run] FlashDreams SANA-WM bidirectional -> ${FLASHDREAMS_OUT}"
 
 echo "[diff] summarising parity -> ${OUTPUT_DIR}/parity.json"
 ( cd "${SANA_TEST_DIR}" && \
-    uv run python "${PARITY_SCRIPT_DIR}/diff_parity.py" \
+    uv run --no-sync python "${PARITY_SCRIPT_DIR}/diff_parity.py" \
         --upstream "${UPSTREAM_FRAMES}" \
         --flashdreams "${FLASHDREAMS_FRAMES}" \
         --output "${OUTPUT_DIR}/parity.json" )
