@@ -562,6 +562,16 @@ def prepare_config_and_backend(
             manifest = replace(
                 manifest, debug_condition_frame_dir=args.official_hdmap_dir.resolve()
             )
+        text_edits_enabled = bool(
+            args.taxi_game and args.taxi_world_consistency_prompts
+        )
+        if text_edits_enabled and manifest.native_dit_acceleration != "disabled":
+            logger.warning(
+                "[crazy-robotaxi] PR431 prompt edits do not support native DiT; "
+                f"overriding native_dit_acceleration="
+                f"{manifest.native_dit_acceleration!r} with 'disabled'",
+            )
+            manifest = replace(manifest, native_dit_acceleration="disabled")
         if config.raster.resolution_wh != manifest.resolution_wh:
             config = replace(
                 config,
@@ -580,9 +590,7 @@ def prepare_config_and_backend(
             offload_text_encoder=config.world_model_offload_text_encoder,
             postprocess=config.postprocess,
             synchronize_bev_with_rgb=bool(args.taxi_game),
-            text_edits_enabled=bool(
-                args.taxi_game and args.taxi_world_consistency_prompts
-            ),
+            text_edits_enabled=text_edits_enabled,
         )
     return config, backend
 

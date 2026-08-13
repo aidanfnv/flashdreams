@@ -127,6 +127,41 @@ def test_pr431_text_edits_are_scoped_to_crazy_robotaxi(
     assert backend_kwargs["text_edits_enabled"] is expected_text_edits
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected_native_dit"),
+    [
+        ([], "required"),
+        (["--taxi-game"], "disabled"),
+        (["--taxi-game", "--no-taxi-world-consistency-prompts"], "required"),
+    ],
+)
+def test_taxi_prompt_edits_disable_native_dit_only_for_their_session(
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    expected_native_dit: str,
+) -> None:
+    backend_kwargs: dict[str, object] = {}
+
+    def build_backend(**kwargs: object) -> object:
+        backend_kwargs.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(cli, "WorldModelRenderBackend", build_backend)
+    cli.prepare_config_and_backend(
+        build_parser().parse_args(
+            [
+                "--backend",
+                "omnidreams",
+                "--manifest",
+                "example_world_model_perf.yaml",
+                *argv,
+            ]
+        )
+    )
+
+    assert backend_kwargs["manifest"].native_dit_acceleration == expected_native_dit
+
+
 def test_taxi_alignment_diagnostics_accepts_output_directory() -> None:
     args = build_parser().parse_args(
         ["--taxi-game", "--taxi-alignment-diagnostics", "diagnostics"]
