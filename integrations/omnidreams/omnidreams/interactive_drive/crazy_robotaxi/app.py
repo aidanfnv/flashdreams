@@ -278,7 +278,7 @@ def taxi_config_from_args(args: argparse.Namespace) -> TaxiGameConfig:
         ),
         world_consistency_prompts=bool(
             args.backend == "omnidreams"
-            and getattr(args, "taxi_world_consistency_prompts", True)
+            and getattr(args, "taxi_world_consistency_prompts", False)
         ),
     )
 

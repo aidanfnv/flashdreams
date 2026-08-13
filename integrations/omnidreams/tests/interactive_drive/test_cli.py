@@ -28,13 +28,13 @@ def test_game_mode_defaults_disabled_and_can_be_enabled() -> None:
     assert build_parser().parse_args(["--game-mode"]).game_mode is True
 
 
-def test_world_consistency_prompts_default_enabled_and_can_be_disabled() -> None:
-    assert build_parser().parse_args([]).taxi_world_consistency_prompts is True
+def test_world_consistency_prompts_default_disabled_and_can_be_enabled() -> None:
+    assert build_parser().parse_args([]).taxi_world_consistency_prompts is False
     assert (
         build_parser()
-        .parse_args(["--no-taxi-world-consistency-prompts"])
+        .parse_args(["--taxi-world-consistency-prompts"])
         .taxi_world_consistency_prompts
-        is False
+        is True
     )
 
 
@@ -96,7 +96,9 @@ def test_taxi_game_selects_frame_synchronous_bev(
     ("argv", "expected_text_edits"),
     [
         ([], False),
-        (["--taxi-game"], True),
+        (["--taxi-world-consistency-prompts"], False),
+        (["--taxi-game"], False),
+        (["--taxi-game", "--taxi-world-consistency-prompts"], True),
         (["--taxi-game", "--no-taxi-world-consistency-prompts"], False),
     ],
 )
@@ -131,7 +133,9 @@ def test_pr431_text_edits_are_scoped_to_crazy_robotaxi(
     ("argv", "expected_native_dit"),
     [
         ([], "required"),
-        (["--taxi-game"], "disabled"),
+        (["--taxi-world-consistency-prompts"], "required"),
+        (["--taxi-game"], "required"),
+        (["--taxi-game", "--taxi-world-consistency-prompts"], "disabled"),
         (["--taxi-game", "--no-taxi-world-consistency-prompts"], "required"),
     ],
 )

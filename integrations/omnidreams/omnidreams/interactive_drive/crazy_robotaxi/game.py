@@ -130,7 +130,7 @@ class TaxiGameConfig:
     alignment_diagnostics_enabled: bool = False
     """Whether the rollout captures frame-synchronized alignment evidence."""
 
-    world_consistency_prompts: bool = True
+    world_consistency_prompts: bool = False
     """Whether physical state drives PR431 mid-stream prompt edits."""
 
     def __post_init__(self) -> None:

@@ -349,10 +349,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--taxi-world-consistency-prompts",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Use PR431 prompt edits to reinforce reverse motion and vehicle "
-            "collisions in Crazy Robotaxi generated RGB (default: enabled)."
+            "collisions in Crazy Robotaxi generated RGB (default: disabled)."
         ),
     )
     parser.add_argument(
