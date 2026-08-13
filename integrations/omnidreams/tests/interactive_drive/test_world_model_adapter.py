@@ -11,9 +11,10 @@ import numpy as np
 import omnidreams.interactive_drive.world_model.flashdreams_adapter as adapter_module
 import pytest
 import torch
+from omnidreams.interactive_drive._pipeline_fakes import make_trajectory, minimal_scene
 from omnidreams.interactive_drive.backends.world_model import WorldModelRenderBackend
 from omnidreams.interactive_drive.config import WorldModelProfileConfig
-from omnidreams.interactive_drive.types import PresentedFrame
+from omnidreams.interactive_drive.types import PresentedFrame, TextPromptUpdate
 from omnidreams.interactive_drive.world_model.flashdreams_adapter import (
     FlashdreamsWorldModelSession,
     _build_pipeline_config,
@@ -140,6 +141,45 @@ def test_world_model_merge_preserves_bev_source_pose() -> None:
     assert len(merged) == 1
     assert merged[0].bev_host_uint8 is raster_frame.bev_host_uint8
     assert merged[0].bev_rig_to_world is bev_pose
+
+
+def test_world_model_first_chunk_uses_taxi_prompt_update() -> None:
+    backend = WorldModelRenderBackend.__new__(WorldModelRenderBackend)
+    backend._scene = replace(minimal_scene(), prompt="Base scene prompt.")
+    backend._debug_first_chunk_condition_frames = None
+    trajectory = make_trajectory(5)
+    raster_frames = tuple(
+        PresentedFrame(
+            timestamp_us=int(timestamp_us),
+            rgb_host_uint8=np.zeros((4, 4, 3), dtype=np.uint8),
+            depth_host_f32=None,
+        )
+        for timestamp_us in trajectory.timestamps_us
+    )
+    backend._rasterizer = SimpleNamespace(
+        render_chunk=lambda **_kwargs: SimpleNamespace(frames=raster_frames)
+    )
+    received_prompts: list[str] = []
+
+    def start(
+        initial_rgb: object, condition_frames: list[object], prompt: str
+    ) -> list[np.ndarray]:
+        del initial_rgb, condition_frames
+        received_prompts.append(prompt)
+        return [np.zeros((4, 4, 3), dtype=np.uint8) for _ in range(5)]
+
+    backend._session = SimpleNamespace(start=start)
+
+    rendered = backend.render_first_chunk(
+        trajectory,
+        text_prompt_update=TextPromptUpdate(
+            prompt="The camera vehicle is reversing backward.",
+            active_modifiers=("reverse",),
+        ),
+    )
+
+    assert received_prompts == ["The camera vehicle is reversing backward."]
+    assert len(rendered.frames) == 5
 
 
 def test_select_config_name_uses_omnidreams_recipe_slugs() -> None:
