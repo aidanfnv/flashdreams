@@ -369,6 +369,35 @@ class TrajectoryChunk:
             )
 
 
+@dataclass(frozen=True)
+class TextPromptUpdate:
+    """Text-conditioning request synchronized to one generated chunk."""
+
+    prompt: str
+    """Complete prompt that should condition the generated chunk."""
+
+    guidance_scale: float = 3.0
+    """PR431 edit-guidance strength used when the active prompt changes."""
+
+    guidance_chunks: int = 6
+    """Number of generated chunks that receive temporary edit guidance."""
+
+    recache_last_chunk: bool = True
+    """Whether to recommit the preceding chunk under the replacement prompt."""
+
+    active_modifiers: tuple[str, ...] = ()
+    """Stable diagnostic labels describing why this prompt was selected."""
+
+    def __post_init__(self) -> None:
+        """Validate the text-edit request before it reaches the worker."""
+        if not self.prompt.strip():
+            raise ValueError("TextPromptUpdate.prompt must not be empty")
+        if self.guidance_scale <= 0.0:
+            raise ValueError("TextPromptUpdate.guidance_scale must be positive")
+        if self.guidance_chunks < 0:
+            raise ValueError("TextPromptUpdate.guidance_chunks must be non-negative")
+
+
 @dataclass
 class PresentedFrame:
     timestamp_us: int
@@ -399,6 +428,12 @@ class PresentedFrame:
 
     application_state: object | None = None
     """Opaque application state synchronized to this frame."""
+
+    text_prompt_update: TextPromptUpdate | None = None
+    """Text-conditioning request used to generate this frame's chunk."""
+
+    generated_chunk_index: int | None = None
+    """Autoregressive chunk index that produced this frame."""
 
 
 @dataclass(frozen=True)

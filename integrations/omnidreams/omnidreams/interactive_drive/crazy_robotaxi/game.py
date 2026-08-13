@@ -130,6 +130,9 @@ class TaxiGameConfig:
     alignment_diagnostics_enabled: bool = False
     """Whether the rollout captures frame-synchronized alignment evidence."""
 
+    world_consistency_prompts: bool = True
+    """Whether physical state drives PR431 mid-stream prompt edits."""
+
     def __post_init__(self) -> None:
         """Validate Taxi-only values at configuration time."""
         if not 0.0 < self.traffic_density <= 1.0:

@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from loguru import logger
 from omnidreams.interactive_drive.config import WorldModelProfileConfig
+from omnidreams.interactive_drive.types import TextPromptUpdate
 from omnidreams.interactive_drive.world_model.manifest import WorldModelManifest
 from omnidreams.interactive_drive.world_model.synthetic_fixture import (
     build_synthetic_world_model_assets,
@@ -491,16 +492,40 @@ class FlashdreamsWorldModelSession:
         offload_text_encoder: bool = False,
         pipeline_factory: PipelineFactory | None = None,
         postprocess: VideoPostprocessChainConfig | None = None,
+        text_edits_enabled: bool = False,
     ) -> None:
         self.manifest = manifest
         self._profile_config = profile or WorldModelProfileConfig()
         self._offload_text_encoder = bool(offload_text_encoder)
+        self._text_edits_enabled = bool(text_edits_enabled)
+        if self._text_edits_enabled and self._offload_text_encoder:
+            raise ValueError(
+                "Crazy Robotaxi world-consistency prompts are incompatible "
+                "with --offload-text-encoder. Use "
+                "--no-taxi-world-consistency-prompts or keep the text encoder loaded."
+            )
+        if (
+            self._text_edits_enabled
+            and self.manifest.native_dit_acceleration != "disabled"
+        ):
+            raise ValueError(
+                "Crazy Robotaxi world-consistency prompts require "
+                "native_dit_acceleration='disabled'. Use a compatible manifest "
+                "or --no-taxi-world-consistency-prompts."
+            )
+        if self._text_edits_enabled and self.manifest.synthetic_model:
+            raise ValueError(
+                "Crazy Robotaxi world-consistency prompts require loaded text "
+                "conditioning and are incompatible with synthetic_model. Use "
+                "--no-taxi-world-consistency-prompts for synthetic smoke tests."
+            )
         self._pipeline_factory = pipeline_factory
         self._pipeline: Any | None = None
         self._cache: Any | None = None
         self._precomputed_embeddings: dict[str, torch.Tensor | None] | None = None
         self._pending_finalization_index: int | None = None
         self._next_block_index = 0
+        self._active_prompt: str | None = None
         self._postprocess = postprocess or VideoPostprocessChainConfig()
         self._postprocess_enabled = self._postprocess.is_enabled()
         self._postprocess_stream: VideoPostprocessStream | None = None
@@ -549,6 +574,7 @@ class FlashdreamsWorldModelSession:
                 config = _build_pipeline_config(self.manifest, self._profile_config)
                 self._pipeline = _setup_pipeline_from_config(config, self.manifest)
             self._validate_chunk_sizes()
+            self._validate_text_edit_pipeline()
 
         warmup_timing = run_timed_prewarm(
             build_and_validate_pipeline,
@@ -635,6 +661,7 @@ class FlashdreamsWorldModelSession:
         start = time.perf_counter()
         with torch.no_grad():
             self._cache = self._initialize_cache(initial_rgb, prompt)
+            self._active_prompt = prompt
             video = self.pipeline.generate(
                 autoregressive_index=0,
                 cache=self._cache,
@@ -649,7 +676,12 @@ class FlashdreamsWorldModelSession:
         logger.info(f"[flashdreams-session] start total_ms={elapsed_ms:.1f}")
         return model_frames
 
-    def continue_generation(self, condition_frames: list[object]) -> list[object]:
+    def continue_generation(
+        self,
+        condition_frames: list[object],
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> list[object]:
         if self._cache is None:
             raise RuntimeError("start() must be called before continue_generation()")
         expected_frames = self.pipeline.get_num_frames(self._next_block_index)
@@ -664,6 +696,7 @@ class FlashdreamsWorldModelSession:
             if self._pending_finalization_index is not None:
                 self.pipeline.finalize(self._pending_finalization_index, self._cache)
                 self._pending_finalization_index = None
+            self._apply_text_prompt_update(text_prompt_update)
             video = self.pipeline.generate(
                 autoregressive_index=self._next_block_index,
                 cache=self._cache,
@@ -689,6 +722,7 @@ class FlashdreamsWorldModelSession:
         self._cache = None
         self._pending_finalization_index = None
         self._next_block_index = 0
+        self._active_prompt = None
         if clear_precomputed_embeddings:
             self._precomputed_embeddings = None
             logger.info(
@@ -703,6 +737,49 @@ class FlashdreamsWorldModelSession:
             self._pending_finalization_index = None
         self._cache = None
         self._pipeline = None
+        self._active_prompt = None
+
+    def _validate_text_edit_pipeline(self) -> None:
+        """Reject model configurations that PR431 cannot edit safely."""
+        if not self._text_edits_enabled:
+            return
+        replace_text = getattr(self.pipeline, "replace_text", None)
+        if not callable(replace_text):
+            raise RuntimeError(
+                "World-consistency prompts require a pipeline with PR431 "
+                "replace_text support."
+            )
+        transformer = self.pipeline.diffusion_model.transformer
+        guidance_scale = float(transformer.config.guidance_scale)
+        if guidance_scale != 1.0:
+            raise ValueError(
+                "World-consistency edit guidance is incompatible with "
+                "negative-prompt CFG; transformer guidance_scale must be 1.0."
+            )
+
+    def _apply_text_prompt_update(self, update: TextPromptUpdate | None) -> None:
+        """Apply a changed prompt after finalization and before generation."""
+        if update is None or update.prompt == self._active_prompt:
+            return
+        if not self._text_edits_enabled:
+            return
+        if self._cache is None:
+            raise RuntimeError("Cannot replace text before rollout initialization")
+        self.pipeline.replace_text(
+            self._cache,
+            [[update.prompt]],
+            guidance_scale=update.guidance_scale,
+            guidance_chunks=update.guidance_chunks,
+            recache_last_chunk=update.recache_last_chunk,
+        )
+        self._active_prompt = update.prompt
+        logger.info(
+            "[flashdreams-session] replaced prompt "
+            f"modifiers={update.active_modifiers!r} "
+            f"guidance_scale={update.guidance_scale:.2f} "
+            f"guidance_chunks={update.guidance_chunks} "
+            f"recache={update.recache_last_chunk}",
+        )
 
     def set_postprocess_enabled(self, enabled: bool) -> None:
         """Toggle the configured post-process chain between generated chunks."""

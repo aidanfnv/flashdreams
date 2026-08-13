@@ -56,6 +56,9 @@ from omnidreams.interactive_drive.crazy_robotaxi.physics import (
 from omnidreams.interactive_drive.crazy_robotaxi.scene import (
     load_scene_data,
 )
+from omnidreams.interactive_drive.crazy_robotaxi.world_consistency import (
+    WorldConsistencyPromptController,
+)
 from omnidreams.interactive_drive.simulation.ground_snap import GroundSnapper
 from omnidreams.interactive_drive.simulation.map_bounds import MapBounds
 from omnidreams.interactive_drive.types import (
@@ -74,9 +77,11 @@ class CrazyRobotaxiRuntime:
         self,
         controller: TaxiGameController,
         keyboard: CrazyRobotaxiKeyboardState,
+        world_consistency_prompts: WorldConsistencyPromptController | None = None,
     ) -> None:
         self._controller = controller
         self._keyboard = keyboard
+        self._world_consistency_prompts = world_consistency_prompts
 
     @property
     def is_running(self) -> bool:
@@ -102,12 +107,18 @@ class CrazyRobotaxiRuntime:
         passengers = build_pickup_passenger_trajectories(
             snapshots, trajectory.timestamps_us
         )
+        text_prompt_update = (
+            None
+            if self._world_consistency_prompts is None
+            else self._world_consistency_prompts.update(trajectory)
+        )
         return ApplicationChunkUpdate(
             trajectory=replace(
                 trajectory,
                 dynamic_actors=(*trajectory.dynamic_actors, *passengers),
             ),
             frame_application_states=snapshots,
+            text_prompt_update=text_prompt_update,
         )
 
     def publish_boundary(self, state: VehicleState) -> None:
@@ -151,6 +162,11 @@ class CrazyRobotaxiApplication:
         configure = getattr(presenter, "configure_taxi_camera", None)
         if callable(configure):
             configure(scene.selected_camera)
+        configure_diagnostics = getattr(
+            presenter, "configure_taxi_diagnostics_scene", None
+        )
+        if callable(configure_diagnostics):
+            configure_diagnostics(scene)
 
     def rollout_spec(
         self,
@@ -192,7 +208,16 @@ class CrazyRobotaxiApplication:
             initial_camera=scene.selected_camera,
             map_bounds=self._map_bounds,
         )
-        return CrazyRobotaxiRuntime(controller, self._keyboard)
+        prompt_controller = (
+            WorldConsistencyPromptController(scene.prompt)
+            if self._config.world_consistency_prompts
+            else None
+        )
+        return CrazyRobotaxiRuntime(
+            controller,
+            self._keyboard,
+            world_consistency_prompts=prompt_controller,
+        )
 
 
 class CrazyRobotaxiApp(InteractiveDriveApp):
@@ -210,22 +235,6 @@ class CrazyRobotaxiApp(InteractiveDriveApp):
         close_presenter_on_exit: bool = True,
     ) -> None:
         keyboard = CrazyRobotaxiKeyboardState()
-        if alignment_diagnostics_root is not None:
-            from omnidreams.interactive_drive.crazy_robotaxi.alignment_diagnostics import (
-                AlignmentDiagnosticPresenter,
-            )
-
-            if presenter is None:
-                from omnidreams.interactive_drive.presenter import SlangPyPresenter
-
-                presenter = SlangPyPresenter(config.raster, keyboard)
-            presenter = AlignmentDiagnosticPresenter(
-                presenter,
-                alignment_diagnostics_root,
-            )
-            logger.info(
-                f"[crazy-robotaxi] alignment diagnostics -> {presenter.output_dir}"
-            )
         super().__init__(
             config=config,
             backend=backend,
@@ -236,6 +245,20 @@ class CrazyRobotaxiApp(InteractiveDriveApp):
             application=CrazyRobotaxiApplication(taxi_config, keyboard, config.bev),
         )
         self._presenter = CausalFrameAlignmentPresenter(self._presenter)
+        if alignment_diagnostics_root is not None:
+            from omnidreams.interactive_drive.crazy_robotaxi.alignment_diagnostics import (
+                AlignmentDiagnosticPresenter,
+            )
+
+            self._presenter = AlignmentDiagnosticPresenter(
+                self._presenter,
+                alignment_diagnostics_root,
+                model_seed=backend.rollout_seed,
+            )
+            logger.info(
+                "[crazy-robotaxi] alignment diagnostics -> "
+                f"{self._presenter.output_dir}"
+            )
 
 
 def taxi_config_from_args(args: argparse.Namespace) -> TaxiGameConfig:
@@ -252,6 +275,10 @@ def taxi_config_from_args(args: argparse.Namespace) -> TaxiGameConfig:
         high_scores_path=high_scores_path,
         alignment_diagnostics_enabled=(
             getattr(args, "taxi_alignment_diagnostics", None) is not None
+        ),
+        world_consistency_prompts=bool(
+            args.backend == "omnidreams"
+            and getattr(args, "taxi_world_consistency_prompts", True)
         ),
     )
 

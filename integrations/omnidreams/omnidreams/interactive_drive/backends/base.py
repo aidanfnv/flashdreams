@@ -6,7 +6,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from omnidreams.interactive_drive.config import ChunkConfig, RasterConfig
-from omnidreams.interactive_drive.types import FrameChunk, SceneBundle, TrajectoryChunk
+from omnidreams.interactive_drive.types import (
+    FrameChunk,
+    SceneBundle,
+    TextPromptUpdate,
+    TrajectoryChunk,
+)
 
 
 class RenderBackend(ABC):
@@ -50,6 +55,11 @@ class RenderBackend(ABC):
         that phase text.
         """
         return False
+
+    @property
+    def rollout_seed(self) -> int | None:
+        """Return the deterministic model seed, or ``None`` when unpinned."""
+        return None
 
     @abstractmethod
     def warmup_model(self) -> None:
@@ -98,11 +108,21 @@ class RenderBackend(ABC):
         del enabled
 
     @abstractmethod
-    def render_first_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_first_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
         raise NotImplementedError
 
     @abstractmethod
-    def render_next_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_next_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
         raise NotImplementedError
 
     def close(self) -> None:

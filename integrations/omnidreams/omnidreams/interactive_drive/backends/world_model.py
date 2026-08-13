@@ -22,6 +22,7 @@ from omnidreams.interactive_drive.types import (
     FrameChunk,
     PresentedFrame,
     SceneBundle,
+    TextPromptUpdate,
     TrajectoryChunk,
     VideoModelTimings,
 )
@@ -49,6 +50,7 @@ class WorldModelRenderBackend(RenderBackend):
         postprocess: VideoPostprocessChainConfig | None = None,
         *,
         synchronize_bev_with_rgb: bool = False,
+        text_edits_enabled: bool = False,
     ) -> None:
         super().__init__(chunk=chunk, raster=raster)
         self._manifest = manifest
@@ -62,6 +64,7 @@ class WorldModelRenderBackend(RenderBackend):
             profile=profile,
             offload_text_encoder=offload_text_encoder,
             postprocess=postprocess,
+            text_edits_enabled=text_edits_enabled,
         )
         self._scene: SceneBundle | None = None
         self._next_chunk_count = 0
@@ -76,6 +79,11 @@ class WorldModelRenderBackend(RenderBackend):
         # First chunk triggers compile / CUDA-graph capture / Triton autotune,
         # which can take minutes on the first launch.
         return True
+
+    @property
+    def rollout_seed(self) -> int | None:
+        """Return the manifest's seed used to reproduce generated chunks."""
+        return self._manifest.seed_for_every_rollout
 
     def warmup_model(self) -> None:
         if self._manifest.resolution_wh != self._raster.resolution_wh:
@@ -128,7 +136,12 @@ class WorldModelRenderBackend(RenderBackend):
             f"total_ms={(prepare_end - load_start) * 1000.0:.1f}",
         )
 
-    def render_first_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_first_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
         scene = self._require_scene()
         chunk_start = time.perf_counter()
         if self._debug_first_chunk_condition_frames is None:
@@ -183,10 +196,11 @@ class WorldModelRenderBackend(RenderBackend):
                 "[world-model] first_chunk using official hdmap override "
                 f"dir={self._manifest.debug_condition_frame_dir}",
             )
-        _log_prompt_handoff("first_chunk.start", scene)
-        model_frames = self._session.start(
-            scene.initial_rgb, condition_frames, scene.prompt
+        prompt = (
+            scene.prompt if text_prompt_update is None else text_prompt_update.prompt
         )
+        _log_prompt_handoff("first_chunk.start", replace(scene, prompt=prompt))
+        model_frames = self._session.start(scene.initial_rgb, condition_frames, prompt)
         model_end = time.perf_counter()
         merged_frames = self._merge_frames(
             display_frames,
@@ -216,7 +230,12 @@ class WorldModelRenderBackend(RenderBackend):
             ),
         )
 
-    def render_next_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_next_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
         self._require_scene()
         chunk_start = time.perf_counter()
         raster_chunk = self._rasterizer.render_chunk(
@@ -227,7 +246,10 @@ class WorldModelRenderBackend(RenderBackend):
         )
         raster_end = time.perf_counter()
         condition_frames = [frame.rgb_host_uint8 for frame in raster_chunk.frames]
-        model_frames = self._session.continue_generation(condition_frames)
+        model_frames = self._session.continue_generation(
+            condition_frames,
+            text_prompt_update=text_prompt_update,
+        )
         model_end = time.perf_counter()
         merged_frames = self._merge_frames(raster_chunk.frames, model_frames)
         merge_end = time.perf_counter()

@@ -563,6 +563,7 @@ def run_main_loop(
                     frame_application_states=(
                         application_update.frame_application_states
                     ),
+                    text_prompt_update=application_update.text_prompt_update,
                 )
             pipeline.request_pose_chunk(chunk_request)
             # The pose chunk just advanced authoritative state, so refresh the

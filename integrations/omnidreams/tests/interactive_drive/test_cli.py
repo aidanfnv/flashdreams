@@ -28,6 +28,16 @@ def test_game_mode_defaults_disabled_and_can_be_enabled() -> None:
     assert build_parser().parse_args(["--game-mode"]).game_mode is True
 
 
+def test_world_consistency_prompts_default_enabled_and_can_be_disabled() -> None:
+    assert build_parser().parse_args([]).taxi_world_consistency_prompts is True
+    assert (
+        build_parser()
+        .parse_args(["--no-taxi-world-consistency-prompts"])
+        .taxi_world_consistency_prompts
+        is False
+    )
+
+
 def test_visual_flare_override_defaults_disabled() -> None:
     assert build_parser().parse_args([]).disable_visual_flare is False
     assert (
@@ -80,6 +90,41 @@ def test_taxi_game_selects_frame_synchronous_bev(
     cli.prepare_config_and_backend(build_parser().parse_args(argv))
 
     assert backend_kwargs["synchronize_bev_with_rgb"] is expected_synchronization
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_text_edits"),
+    [
+        ([], False),
+        (["--taxi-game"], True),
+        (["--taxi-game", "--no-taxi-world-consistency-prompts"], False),
+    ],
+)
+def test_pr431_text_edits_are_scoped_to_crazy_robotaxi(
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+    expected_text_edits: bool,
+) -> None:
+    backend_kwargs: dict[str, object] = {}
+
+    def build_backend(**kwargs: object) -> object:
+        backend_kwargs.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(cli, "WorldModelRenderBackend", build_backend)
+    cli.prepare_config_and_backend(
+        build_parser().parse_args(
+            [
+                "--backend",
+                "omnidreams",
+                "--manifest",
+                "example_world_model.yaml",
+                *argv,
+            ]
+        )
+    )
+
+    assert backend_kwargs["text_edits_enabled"] is expected_text_edits
 
 
 def test_taxi_alignment_diagnostics_accepts_output_directory() -> None:

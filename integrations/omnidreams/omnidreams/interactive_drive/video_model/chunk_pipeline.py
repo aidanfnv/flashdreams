@@ -15,6 +15,7 @@ from omnidreams.interactive_drive.types import (
     FrameChunk,
     PresentedFrame,
     SceneBundle,
+    TextPromptUpdate,
     TrajectoryChunk,
 )
 
@@ -43,7 +44,11 @@ class VideoModelBackend(Protocol):
 
     def load_scene(self, scene: SceneBundle) -> None: ...
 
-    def render_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk: ...
+    def render_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk: ...
 
     def reset(self) -> None: ...
 
@@ -65,6 +70,9 @@ class ChunkRequest:
     trace_dependency_event: int | None = None
     frame_application_states: tuple[object | None, ...] | None = None
     """Opaque application state synchronized to each requested frame."""
+
+    text_prompt_update: TextPromptUpdate | None = None
+    """Optional text-conditioning update for this generated chunk."""
 
 
 @dataclass(frozen=True)
@@ -210,6 +218,7 @@ class ChunkPipeline:
         trajectory = request.trajectory
         trace_dependency_event = request.trace_dependency_event
         frame_application_states = request.frame_application_states
+        text_prompt_update = request.text_prompt_update
         submit_generation = self.current_generation
 
         def render_command(backend: VideoModelBackend) -> bool:
@@ -236,7 +245,7 @@ class ChunkPipeline:
                     depends_on=event_dependencies(trace_dependency_event),
                     chunk_index=chunk_times.chunk_index,
                 )
-            frame_chunk = backend.render_chunk(trajectory)
+            frame_chunk = backend.render_chunk(trajectory, text_prompt_update)
             render_end = time.perf_counter()
             chunk_times.chunk_ready_time = render_end
             worker_ready_event_id = None
@@ -283,6 +292,8 @@ class ChunkPipeline:
                     rig_to_world=trajectory.rig_poses_world[frame_index].copy(),
                     vehicle_state=replace(trajectory.vehicle_states[frame_index]),
                     application_state=application_state,
+                    text_prompt_update=text_prompt_update,
+                    generated_chunk_index=chunk_times.chunk_index,
                 )
                 frame_times = chunk_times.frames[frame_index]
                 frame_times.image_ready_time = time.perf_counter()

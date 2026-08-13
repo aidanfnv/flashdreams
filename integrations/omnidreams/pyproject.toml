@@ -111,6 +111,7 @@ omnidreams-eval = "omnidreams.eval.cli:main"
 # ``interactive-drive`` extra (it adds slangpy); without it the
 # presenter import fails fast with a clear message.
 interactive-drive = "omnidreams.interactive_drive.demo:main"
+crazy-robotaxi-replay-consistency = "omnidreams.interactive_drive.crazy_robotaxi.consistency_replay:main"
 
 # Tkinter wizard that calibrates a connected steering wheel or game
 # controller and writes a local input profile the demo auto-discovers.

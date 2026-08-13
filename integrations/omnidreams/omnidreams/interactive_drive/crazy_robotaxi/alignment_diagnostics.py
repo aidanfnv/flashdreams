@@ -34,6 +34,7 @@ from omnidreams.interactive_drive.types import (
     CameraCalibration,
     PhysicsDebugFrame,
     PresentedFrame,
+    SceneBundle,
     VehicleState,
 )
 from PIL import Image, ImageDraw, ImageFont
@@ -59,13 +60,17 @@ class _CapturedFrame:
 class AlignmentDiagnosticRecorder:
     """Persist synchronized model inputs, outputs, physics, and poses."""
 
-    def __init__(self, output_root: Path) -> None:
+    def __init__(self, output_root: Path, *, model_seed: int | None = None) -> None:
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         self.output_dir = (
             output_root.expanduser().resolve() / f"run-{run_id}-{os.getpid()}"
         )
         self._frames_dir = self.output_dir / "frames"
         self._frames_dir.mkdir(parents=True, exist_ok=False)
+        self._conditioning_dir = self.output_dir / "conditioning"
+        self._conditioning_dir.mkdir()
+        self._generated_dir = self.output_dir / "generated"
+        self._generated_dir.mkdir()
         self._queue: queue.Queue[_CapturedFrame | None] = queue.Queue(maxsize=16)
         self._writer_error: BaseException | None = None
         self._closed = False
@@ -74,6 +79,7 @@ class AlignmentDiagnosticRecorder:
         self._metadata: dict[str, object] = {
             "format_version": 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            "model_seed": model_seed,
             "panels": [
                 "HD-map conditioning",
                 "generated RGB",
@@ -109,6 +115,16 @@ class AlignmentDiagnosticRecorder:
         """Record the scene selection associated with subsequent frames."""
         self._metadata["scene_path"] = str(scene_path)
         self._metadata["variant"] = variant
+        self._write_metadata()
+
+    def configure_scene(self, scene: SceneBundle) -> None:
+        """Record first-frame conditioning and the unmodified scene prompt."""
+        self._metadata["original_prompt"] = scene.prompt
+        self._metadata["scene_id"] = scene.scene_id
+        Image.fromarray(_materialize_rgb(scene.initial_rgb), mode="RGB").save(
+            self.output_dir / "initial_rgb.png",
+            format="PNG",
+        )
         self._write_metadata()
 
     def capture(self, frame: PresentedFrame) -> None:
@@ -191,6 +207,14 @@ class AlignmentDiagnosticRecorder:
                         self._frames_dir / f"frame_{captured.sequence:06d}.png",
                         format="PNG",
                     )
+                    Image.fromarray(captured.condition_rgb, mode="RGB").save(
+                        self._conditioning_dir / f"frame_{captured.sequence:06d}.png",
+                        format="PNG",
+                    )
+                    Image.fromarray(captured.generated_rgb, mode="RGB").save(
+                        self._generated_dir / f"frame_{captured.sequence:06d}.png",
+                        format="PNG",
+                    )
         except BaseException as exc:  # noqa: BLE001 - re-raised by the owner thread
             self._writer_error = exc
 
@@ -198,9 +222,15 @@ class AlignmentDiagnosticRecorder:
 class AlignmentDiagnosticPresenter:
     """Record synchronized frames before HUD overlays are applied."""
 
-    def __init__(self, presenter: Any, output_root: Path) -> None:
+    def __init__(
+        self,
+        presenter: Any,
+        output_root: Path,
+        *,
+        model_seed: int | None = None,
+    ) -> None:
         self._presenter = presenter
-        self._recorder = AlignmentDiagnosticRecorder(output_root)
+        self._recorder = AlignmentDiagnosticRecorder(output_root, model_seed=model_seed)
 
     @property
     def output_dir(self) -> Path:
@@ -213,6 +243,10 @@ class AlignmentDiagnosticPresenter:
         configure = getattr(self._presenter, "configure_taxi_camera", None)
         if callable(configure):
             configure(calibration)
+
+    def configure_taxi_diagnostics_scene(self, scene: SceneBundle) -> None:
+        """Record scene inputs needed by the deterministic A/B replay."""
+        self._recorder.configure_scene(scene)
 
     def acknowledge_scene_change(self, scene_path: object, variant: str) -> Any:
         """Record and forward a selected scene."""
@@ -267,9 +301,24 @@ def _frame_telemetry(frame: PresentedFrame, sequence: int) -> dict[str, object]:
     physx_position = (
         np.full(3, np.nan, dtype=np.float32) if debug is None else debug.ego_position_m
     )
+    prompt_update = frame.text_prompt_update
     return {
         "sequence": sequence,
+        "chunk_index": frame.generated_chunk_index,
         "timestamp_us": int(frame.timestamp_us),
+        "text_prompt": "" if prompt_update is None else prompt_update.prompt,
+        "text_modifiers": (
+            "" if prompt_update is None else ",".join(prompt_update.active_modifiers)
+        ),
+        "text_guidance_scale": (
+            "" if prompt_update is None else prompt_update.guidance_scale
+        ),
+        "text_guidance_chunks": (
+            "" if prompt_update is None else prompt_update.guidance_chunks
+        ),
+        "text_recache": (
+            "" if prompt_update is None else prompt_update.recache_last_chunk
+        ),
         "x_m": state.x_m,
         "y_m": state.y_m,
         "z_m": state.z_m,

@@ -347,6 +347,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--taxi-world-consistency-prompts",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Use PR431 prompt edits to reinforce reverse motion and vehicle "
+            "collisions in Crazy Robotaxi generated RGB (default: enabled)."
+        ),
+    )
+    parser.add_argument(
         "--oob-warn-proximity",
         type=float,
         default=None,
@@ -571,6 +580,9 @@ def prepare_config_and_backend(
             offload_text_encoder=config.world_model_offload_text_encoder,
             postprocess=config.postprocess,
             synchronize_bev_with_rgb=bool(args.taxi_game),
+            text_edits_enabled=bool(
+                args.taxi_game and args.taxi_world_consistency_prompts
+            ),
         )
     return config, backend
 

@@ -72,6 +72,16 @@ def test_taxi_alignment_diagnostics_forces_physics_snapshots() -> None:
     assert taxi_config.alignment_diagnostics_enabled is True
 
 
+def test_taxi_world_consistency_prompts_require_omnidreams_backend() -> None:
+    raster = taxi_config_from_args(build_parser().parse_args(["--taxi-game"]))
+    omnidreams = taxi_config_from_args(
+        build_parser().parse_args(["--taxi-game", "--backend", "omnidreams"])
+    )
+
+    assert raster.world_consistency_prompts is False
+    assert omnidreams.world_consistency_prompts is True
+
+
 def test_taxi_rollout_aligns_model_frame_zero_with_initial_pose() -> None:
     config = TaxiGameConfig(enabled=True)
     application = CrazyRobotaxiApplication(

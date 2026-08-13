@@ -2,7 +2,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 
 from omnidreams.interactive_drive.backends.base import RenderBackend
-from omnidreams.interactive_drive.types import FrameChunk, SceneBundle, TrajectoryChunk
+from omnidreams.interactive_drive.types import (
+    FrameChunk,
+    SceneBundle,
+    TextPromptUpdate,
+    TrajectoryChunk,
+)
 
 
 class LocalVideoModelAdapter:
@@ -36,11 +41,19 @@ class LocalVideoModelAdapter:
         # from the new scene's initial frame and prompt.
         self._is_first_chunk = True
 
-    def render_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
         if self._is_first_chunk:
             self._is_first_chunk = False
-            return self._backend.render_first_chunk(trajectory)
-        return self._backend.render_next_chunk(trajectory)
+            return self._backend.render_first_chunk(
+                trajectory, text_prompt_update=text_prompt_update
+            )
+        return self._backend.render_next_chunk(
+            trajectory, text_prompt_update=text_prompt_update
+        )
 
     def reset(self) -> None:
         self._backend.reset()

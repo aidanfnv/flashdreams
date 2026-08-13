@@ -36,7 +36,11 @@ class _FakePipeline:
         self.precompute_calls: list[dict[str, object]] = []
         self.generate_calls: list[dict[str, object]] = []
         self.finalize_calls: list[tuple[int, object]] = []
+        self.replace_text_calls: list[tuple[object, object, dict[str, object]]] = []
+        self.events: list[str] = []
         self.release_calls = 0
+        transformer = SimpleNamespace(config=SimpleNamespace(guidance_scale=1.0))
+        self.diffusion_model = SimpleNamespace(transformer=transformer)
 
     def get_num_frames(self, autoregressive_index: int) -> int:
         return 5 if autoregressive_index == 0 else 8
@@ -61,12 +65,18 @@ class _FakePipeline:
         self.release_calls += 1
 
     def generate(self, **kwargs: object) -> torch.Tensor:
+        self.events.append("generate")
         self.generate_calls.append(kwargs)
         frame_count = self.get_num_frames(int(kwargs["autoregressive_index"]))
         return torch.zeros((1, 1, frame_count, 3, 2, 3), dtype=torch.float32)
 
     def finalize(self, autoregressive_index: int, cache: object) -> None:
+        self.events.append("finalize")
         self.finalize_calls.append((autoregressive_index, cache))
+
+    def replace_text(self, cache: object, text: object, **kwargs: object) -> None:
+        self.events.append("replace_text")
+        self.replace_text_calls.append((cache, text, kwargs))
 
 
 class _FakeSyntheticPipeline(_FakePipeline):
@@ -311,6 +321,65 @@ def test_session_uses_flashdreams_pipeline_for_rollout() -> None:
 
     session.close()
     assert fake_pipeline.finalize_calls == [(0, "cache"), (1, "cache")]
+
+
+def test_session_applies_pr431_text_edit_between_finalize_and_generate() -> None:
+    fake_pipeline = _FakePipeline()
+    session = FlashdreamsWorldModelSession(
+        _manifest(),
+        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        text_edits_enabled=True,
+    )
+    session.warmup_model()
+    initial_rgb = np.zeros((2, 3, 3), dtype=np.uint8)
+    first_conditions = [np.zeros((2, 3, 3), dtype=np.uint8) for _ in range(5)]
+    next_conditions = [np.zeros((2, 3, 3), dtype=np.uint8) for _ in range(8)]
+    update = adapter_module.TextPromptUpdate(
+        prompt="A car reverses coherently.", active_modifiers=("reverse",)
+    )
+
+    session.start(initial_rgb, first_conditions, "A car drives.")
+    fake_pipeline.events.clear()
+    session.continue_generation(next_conditions, text_prompt_update=update)
+
+    assert fake_pipeline.events == ["finalize", "replace_text", "generate"]
+    assert fake_pipeline.replace_text_calls == [
+        (
+            "cache",
+            [["A car reverses coherently."]],
+            {
+                "guidance_scale": 3.0,
+                "guidance_chunks": 6,
+                "recache_last_chunk": True,
+            },
+        )
+    ]
+
+    fake_pipeline.events.clear()
+    session.continue_generation(next_conditions, text_prompt_update=update)
+    assert fake_pipeline.events == ["finalize", "generate"]
+
+
+def test_session_rejects_incompatible_text_edit_modes() -> None:
+    with pytest.raises(ValueError, match="offload-text-encoder"):
+        FlashdreamsWorldModelSession(
+            _manifest(), offload_text_encoder=True, text_edits_enabled=True
+        )
+    with pytest.raises(ValueError, match="native_dit_acceleration"):
+        FlashdreamsWorldModelSession(
+            replace(_manifest(), native_dit_acceleration="required"),
+            text_edits_enabled=True,
+        )
+
+    fake_pipeline = _FakePipeline()
+    fake_pipeline.diffusion_model.transformer.config.guidance_scale = 3.0
+    session = FlashdreamsWorldModelSession(
+        _manifest(),
+        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        text_edits_enabled=True,
+    )
+    with pytest.raises(ValueError, match="negative-prompt CFG"):
+        session.warmup_model()
 
 
 def test_session_postprocesses_local_frames_and_supports_live_toggle(

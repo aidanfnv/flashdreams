@@ -6,7 +6,12 @@ from __future__ import annotations
 from omnidreams.interactive_drive.backends.base import RenderBackend
 from omnidreams.interactive_drive.config import BevConfig, ChunkConfig, RasterConfig
 from omnidreams.interactive_drive.rasterizer import LudusConditionRasterizer
-from omnidreams.interactive_drive.types import FrameChunk, SceneBundle, TrajectoryChunk
+from omnidreams.interactive_drive.types import (
+    FrameChunk,
+    SceneBundle,
+    TextPromptUpdate,
+    TrajectoryChunk,
+)
 
 
 class RasterRenderBackend(RenderBackend):
@@ -34,10 +39,22 @@ class RasterRenderBackend(RenderBackend):
         self._scene = scene
         self._rasterizer.load_scene(scene)
 
-    def render_first_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_first_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
+        del text_prompt_update
         return self._render_chunk(trajectory)
 
-    def render_next_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_next_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
+        del text_prompt_update
         return self._render_chunk(trajectory)
 
     def _render_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:

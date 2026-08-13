@@ -20,6 +20,7 @@ from omnidreams.interactive_drive.types import (
     FrameChunk,
     PresentedFrame,
     SceneBundle,
+    TextPromptUpdate,
     TrajectoryChunk,
     VehicleState,
 )
@@ -86,6 +87,7 @@ class FakeVideoModelBackend:
         self.load_scene_calls = 0
         self.reset_calls = 0
         self.postprocess_enabled_calls: list[bool] = []
+        self.text_prompt_updates: list[TextPromptUpdate | None] = []
 
     @property
     def can_prewarm(self) -> bool:
@@ -104,7 +106,12 @@ class FakeVideoModelBackend:
     def set_postprocess_enabled(self, enabled: bool) -> None:
         self.postprocess_enabled_calls.append(enabled)
 
-    def render_chunk(self, trajectory: TrajectoryChunk) -> FrameChunk:
+    def render_chunk(
+        self,
+        trajectory: TrajectoryChunk,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
+        self.text_prompt_updates.append(text_prompt_update)
         frames = tuple(
             PresentedFrame(
                 timestamp_us=int(trajectory.timestamps_us[idx]),

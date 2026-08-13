@@ -13,7 +13,12 @@ from omnidreams.interactive_drive._pipeline_fakes import (
     minimal_scene,
 )
 from omnidreams.interactive_drive.crazy_robotaxi.game import TaxiGameSnapshot
-from omnidreams.interactive_drive.types import FrameChunk, PresentedFrame, SceneBundle
+from omnidreams.interactive_drive.types import (
+    FrameChunk,
+    PresentedFrame,
+    SceneBundle,
+    TextPromptUpdate,
+)
 from omnidreams.interactive_drive.video_model.chunk_pipeline import (
     ChunkPipeline,
     ChunkRequest,
@@ -104,7 +109,10 @@ class _GatedBackend:
     def reset(self) -> None:
         self.reset_calls += 1
 
-    def render_chunk(self, trajectory: object) -> FrameChunk:
+    def render_chunk(
+        self, trajectory: object, text_prompt_update: object | None = None
+    ) -> FrameChunk:
+        del text_prompt_update
         self.render_started.set()
         self.release.wait(timeout=5.0)
         frame = PresentedFrame(
@@ -140,7 +148,10 @@ class _GatedWarmupBackend:
     def reset(self) -> None:
         return
 
-    def render_chunk(self, trajectory: object) -> FrameChunk:
+    def render_chunk(
+        self, trajectory: object, text_prompt_update: object | None = None
+    ) -> FrameChunk:
+        del text_prompt_update
         self.render_calls += 1
         frame = PresentedFrame(
             timestamp_us=0,
@@ -184,6 +195,9 @@ def test_chunk_pipeline_stamps_timing_and_orders_frames() -> None:
     pipeline = ChunkPipeline(backend)
     pipeline.request_scene(minimal_scene())
     chunk_times = _chunk_times(chunk_size=3)
+    prompt_update = TextPromptUpdate(
+        prompt="A vehicle reverses coherently.", active_modifiers=("reverse",)
+    )
     taxi_snapshots = tuple(
         TaxiGameSnapshot(
             phase="seeking_pickup",
@@ -201,6 +215,7 @@ def test_chunk_pipeline_stamps_timing_and_orders_frames() -> None:
             trajectory=make_trajectory(3),
             chunk_times=chunk_times,
             frame_application_states=taxi_snapshots,
+            text_prompt_update=prompt_update,
         )
     )
 
@@ -215,11 +230,14 @@ def test_chunk_pipeline_stamps_timing_and_orders_frames() -> None:
     assert chunk_times.chunk_ready_time is not None
     assert chunk_times.frames[0].image_ready_time is not None
     assert first.frame.application_state is taxi_snapshots[0]
+    assert first.frame.text_prompt_update is prompt_update
+    assert first.frame.generated_chunk_index == chunk_times.chunk_index
     assert second.frame.application_state is taxi_snapshots[1]
     assert third.frame.rig_to_world is not None
     assert third.frame.vehicle_state == make_trajectory(3).vehicle_states[2]
     assert backend.warmup_model_calls == 1
     assert backend.load_scene_calls == 1
+    assert backend.text_prompt_updates == [prompt_update]
 
 
 def test_chunk_pipeline_reset_invokes_backend_reset() -> None:

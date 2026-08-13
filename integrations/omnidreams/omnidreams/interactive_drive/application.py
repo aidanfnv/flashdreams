@@ -31,6 +31,7 @@ from omnidreams.interactive_drive.simulation.map_bounds import MapBounds
 from omnidreams.interactive_drive.types import (
     DriverCommand,
     SceneBundle,
+    TextPromptUpdate,
     TrajectoryChunk,
     VehicleState,
 )
@@ -68,6 +69,9 @@ class ApplicationChunkUpdate:
 
     frame_application_states: tuple[object | None, ...]
     """Opaque application state synchronized to every trajectory frame."""
+
+    text_prompt_update: TextPromptUpdate | None = None
+    """Optional world-model text conditioning synchronized to this chunk."""
 
     def __post_init__(self) -> None:
         """Reject frame annotations that do not match the trajectory."""

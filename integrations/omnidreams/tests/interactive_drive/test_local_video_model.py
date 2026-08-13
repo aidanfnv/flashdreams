@@ -5,7 +5,12 @@ from __future__ import annotations
 
 import numpy as np
 from omnidreams.interactive_drive._pipeline_fakes import make_trajectory, minimal_scene
-from omnidreams.interactive_drive.types import FrameChunk, PresentedFrame, SceneBundle
+from omnidreams.interactive_drive.types import (
+    FrameChunk,
+    PresentedFrame,
+    SceneBundle,
+    TextPromptUpdate,
+)
 from omnidreams.interactive_drive.video_model.local import LocalVideoModelAdapter
 
 
@@ -34,11 +39,23 @@ class _Backend:
     def reset_scene_conditioning(self) -> None:
         self.reset_scene_conditioning_calls += 1
 
-    def render_first_chunk(self, trajectory: object) -> FrameChunk:
+    def render_first_chunk(
+        self,
+        trajectory: object,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
+        del text_prompt_update
         self.first_chunk_calls += 1
         return _frame_chunk(trajectory)
 
-    def render_next_chunk(self, trajectory: object) -> FrameChunk:
+    def render_next_chunk(
+        self,
+        trajectory: object,
+        *,
+        text_prompt_update: TextPromptUpdate | None = None,
+    ) -> FrameChunk:
+        del text_prompt_update
         self.next_chunk_calls += 1
         return _frame_chunk(trajectory)
 
