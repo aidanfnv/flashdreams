@@ -327,6 +327,9 @@ class TrajectoryChunk:
     actor_collision_frame_index: int | None = None
     """First frame in this chunk whose physics step reported actor contact."""
 
+    actor_collision_entity_ids: tuple[str, ...] = ()
+    """Stable entity IDs struck during significant actor contacts in this chunk."""
+
     physx_elapsed_s: float | None = None
     """Wall time spent in PhysX synchronization and stepping for this chunk."""
 
@@ -353,6 +356,10 @@ class TrajectoryChunk:
             )
         if frame_count == 0:
             raise ValueError("TrajectoryChunk requires at least one frame")
+        if self.actor_collision_entity_ids and not self.actor_collision_detected:
+            raise ValueError(
+                "actor_collision_entity_ids require actor_collision_detected=True"
+            )
         if self.boundary_state_after_chunk != self.vehicle_states[-1]:
             raise ValueError(
                 "boundary_state_after_chunk must equal the final per-frame state"

@@ -242,6 +242,7 @@ class GamePhysicsWorld:
         self._detached_entity_ids: set[str] = set()
         self.last_step_timings = None
         self.last_step_actor_collision = False
+        self.last_step_struck_actor_ids: tuple[str, ...] = ()
         self._visual_flare_collision_velocity_mps: np.ndarray | None = None
         self._visual_flare_driving_direction_xy: np.ndarray | None = None
         self._visual_flare_impact_normal_xy: np.ndarray | None = None
@@ -649,6 +650,7 @@ class GamePhysicsWorld:
             if self.last_step_actor_collision
             else set()
         )
+        self.last_step_struck_actor_ids = tuple(sorted(significant_struck_vehicle_ids))
         collision_window_expired = (
             self._visual_flare_collision_deadline_us is not None
             and timestamp_us > self._visual_flare_collision_deadline_us

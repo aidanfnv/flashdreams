@@ -342,6 +342,7 @@ def sample_chunk_trajectory(
     max_detached_actors = 0
     actor_collision_detected = False
     actor_collision_frame_index: int | None = None
+    actor_collision_entity_ids: set[str] = set()
     if physics_world is not None:
         physx_started_at = time.perf_counter()
         physics_world.synchronize_window(
@@ -385,6 +386,10 @@ def sample_chunk_trajectory(
             actor_collision_detected |= actor_collision_this_frame
             if actor_collision_this_frame and actor_collision_frame_index is None:
                 actor_collision_frame_index = frame_idx
+            if actor_collision_this_frame:
+                actor_collision_entity_ids.update(
+                    getattr(physics_world, "last_step_struck_actor_ids", ())
+                )
             physx_elapsed_s += time.perf_counter() - physx_started_at
             step_timings = getattr(physics_world, "last_step_timings", None)
             if step_timings is not None:
@@ -420,6 +425,7 @@ def sample_chunk_trajectory(
         physics_debug_frames=tuple(physics_debug_frames),
         actor_collision_detected=actor_collision_detected,
         actor_collision_frame_index=actor_collision_frame_index,
+        actor_collision_entity_ids=tuple(sorted(actor_collision_entity_ids)),
         physx_elapsed_s=physx_elapsed_s if physics_world is not None else None,
         physx_timings=(
             PhysXChunkTimings(

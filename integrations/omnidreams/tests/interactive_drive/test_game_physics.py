@@ -239,6 +239,7 @@ def test_collision_detaches_actor_and_applies_physics_response() -> None:
 
         actor = world.entities[0]
         assert world.last_step_actor_collision is True
+        assert world.last_step_struck_actor_ids == ("car-1",)
         assert actor.detached_from_track is True
         assert state.ragdoll_active is True
         assert first_samples[0][3] is True

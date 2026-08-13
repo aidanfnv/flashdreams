@@ -312,6 +312,7 @@ def test_sample_chunk_trajectory_tracks_only_physx_calls(
         def __init__(self) -> None:
             self._step_index = 0
             self.last_step_actor_collision = False
+            self.last_step_struck_actor_ids: tuple[str, ...] = ()
 
         def synchronize_window(
             self, center_xy_m: np.ndarray, timestamp_us: int | None = None
@@ -326,6 +327,9 @@ def test_sample_chunk_trajectory_tracks_only_physx_calls(
         ) -> tuple[VehicleState, tuple[object, ...]]:
             del timestamp_us, dt_s
             self.last_step_actor_collision = self._step_index == 1
+            self.last_step_struck_actor_ids = (
+                ("car-7",) if self.last_step_actor_collision else ()
+            )
             self._step_index += 1
             return state, ()
 
@@ -355,6 +359,7 @@ def test_sample_chunk_trajectory_tracks_only_physx_calls(
     assert chunk.physx_elapsed_s == pytest.approx(0.010)
     assert chunk.actor_collision_detected is True
     assert chunk.actor_collision_frame_index == 1
+    assert chunk.actor_collision_entity_ids == ("car-7",)
 
 
 def test_sample_chunk_trajectory_with_snapper_follows_slope() -> None:
