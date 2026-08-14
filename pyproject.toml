@@ -47,6 +47,8 @@ no-build-isolation-package = ["transformer-engine-torch"]
 extraPaths = [
     "flashdreams",
     "apps",
+    "apps/crazy_robotaxi",
+    "apps/omnidreams_game_engine",
     "integrations/omnidreams",
     "integrations/omnidreams/ludus-renderer",
     "integrations/causal_forcing",
@@ -73,6 +75,8 @@ python-version = "3.10"
 extra-paths = [
     "flashdreams",
     "apps",
+    "apps/crazy_robotaxi",
+    "apps/omnidreams_game_engine",
     "integrations/omnidreams",
     "integrations/omnidreams/ludus-renderer",
     "integrations/causal_forcing",

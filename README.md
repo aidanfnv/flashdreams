@@ -106,6 +106,21 @@ Drive a world model in real time with the unified OmniDreams `local-window` or
 `webrtc` launch mode. See the
 **[interactive demo guide](https://nvidia.github.io/flashdreams/main/models/omnidreams.html#launch-the-interactive-demo)**.
 
+### Play Crazy Robotaxi
+
+Crazy Robotaxi is a consumer game kept separate from the enterprise Interactive
+Drive demo. It has native-window and WebRTC frontends backed by the standalone
+OmniDreams game engine:
+
+```bash
+uv run flashdreams-run crazy-robotaxi
+uv run flashdreams-run crazy-robotaxi --output webrtc --host 0.0.0.0 --port 8082
+```
+
+See [`apps/crazy_robotaxi/README.md`](apps/crazy_robotaxi/README.md) for controls,
+feature scope, the upstream application shim inventory, and explicitly
+API-blocked work.
+
 ## Supported models
 
 FlashDreams ships first-party integrations under

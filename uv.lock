@@ -22,6 +22,7 @@ members = [
     "flashdreams",
     "flashdreams-causal-forcing",
     "flashdreams-cosmos-predict2",
+    "flashdreams-crazy-robotaxi",
     "flashdreams-fastvideo-causal-wan22",
     "flashdreams-flashvsr",
     "flashdreams-hy-worldplay",
@@ -35,6 +36,7 @@ members = [
     "flashdreams-wan21",
     "flashdreams-wan22",
     "ludus-renderer",
+    "omnidreams-game-engine",
 ]
 overrides = [
     { name = "numpy", specifier = ">=1.24,<2.5" },
@@ -1162,6 +1164,25 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "flashdreams-crazy-robotaxi"
+version = "0.1.0"
+source = { editable = "apps/crazy_robotaxi" }
+dependencies = [
+    { name = "filelock" },
+    { name = "flashdreams", extra = ["local-window", "serving"] },
+    { name = "flashdreams-omnidreams" },
+    { name = "omnidreams-game-engine" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "filelock", specifier = ">=3" },
+    { name = "flashdreams", extras = ["local-window", "serving"], editable = "flashdreams" },
+    { name = "flashdreams-omnidreams", editable = "integrations/omnidreams" },
+    { name = "omnidreams-game-engine", editable = "apps/omnidreams_game_engine" },
+]
 
 [[package]]
 name = "flashdreams-fastvideo-causal-wan22"
@@ -3126,6 +3147,30 @@ name = "nvidia-vfx"
 version = "0.1.0.1"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/37/b4/58e1bbb8d6fc9ed786564d0878314ea2f2cd458c84861a5130927e431ff6/nvidia_vfx-0.1.0.1.tar.gz", hash = "sha256:8a26bae3a967a2ce29040f17ba9d75e106f3d0c68016d440a77ed9c7eb05daae", size = 2673, upload-time = "2026-03-09T19:29:40.556Z" }
+
+[[package]]
+name = "omnidreams-game-engine"
+version = "0.1.0"
+source = { editable = "apps/omnidreams_game_engine" }
+dependencies = [
+    { name = "flashdreams", extra = ["serving"] },
+    { name = "flashdreams-omnidreams" },
+    { name = "ludus-renderer" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-11-flashdreams-dev' and extra == 'group-11-flashdreams-cuda12') or (extra == 'group-11-flashdreams-cuda12' and extra == 'group-11-flashdreams-cuda13')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-11-flashdreams-dev' and extra == 'group-11-flashdreams-cuda12') or (extra == 'group-11-flashdreams-cuda12' and extra == 'group-11-flashdreams-cuda13')" },
+    { name = "pillow" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "flashdreams", extras = ["serving"], editable = "flashdreams" },
+    { name = "flashdreams-omnidreams", editable = "integrations/omnidreams" },
+    { name = "ludus-renderer", editable = "integrations/omnidreams/ludus-renderer" },
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "pillow", specifier = ">=9.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "onnx"

@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashdreams-crazy-robotaxi"
+version = "0.1.0"
+description = "Crazy Robotaxi consumer game for OmniDreams"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "filelock>=3",
+    "flashdreams[local-window,serving]",
+    "flashdreams-omnidreams",
+    "omnidreams-game-engine",
+]
+
+[project.entry-points."flashdreams.applications"]
+crazy-robotaxi = "crazy_robotaxi.app:create_app"
+
+[tool.uv.sources]
+flashdreams = { workspace = true }
+flashdreams-omnidreams = { workspace = true }
+omnidreams-game-engine = { workspace = true }
+
+[tool.setuptools.packages.find]
+include = ["crazy_robotaxi*"]
