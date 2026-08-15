@@ -73,6 +73,7 @@ name: My Map
 profiles:
   neighborhood:
     lane_width_m: 3.6
+    curb_offset_m: 0.6
     lanes: [backward, forward]
     speed_limit_mps: 13.4
     curb: true
@@ -98,6 +99,10 @@ spawns:
         image: seed.png
         prompt: A forward-facing taxi on a neighborhood road.
 ```
+
+`lane_width_m` controls routing and lane rails. `curb_offset_m` adds paved
+roadside clearance beyond the outer lane rail on each side before the physical
+curb; it defaults to zero.
 
 Exactly one element uses `pose`; attached element transforms are derived from
 their ports. Positive arc sweeps turn left and negative sweeps turn right.
