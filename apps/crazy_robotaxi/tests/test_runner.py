@@ -21,7 +21,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
 from crazy_robotaxi.runner import (
     CRAZY_ROBOTAXI_RUNNER,
     CrazyRobotaxiRunner,
@@ -50,6 +49,8 @@ def test_runner_delegates_to_standalone_legacy_cli(
         CRAZY_ROBOTAXI_RUNNER,
         scene=Path("city.usdz"),
         world_model_manifest=Path("example_world_model_perf.yaml"),
+        renderer_config=Path("renderer.yaml"),
+        game_config=Path("game.yaml"),
         backend="raster",
         stream_mjpeg="127.0.0.1:8080",
         auto_start=True,
@@ -70,6 +71,10 @@ def test_runner_delegates_to_standalone_legacy_cli(
             "city.usdz",
             "--manifest",
             "example_world_model_perf.yaml",
+            "--renderer-config",
+            "renderer.yaml",
+            "--game-config",
+            "game.yaml",
             "--backend",
             "raster",
             "--stream-mjpeg",
