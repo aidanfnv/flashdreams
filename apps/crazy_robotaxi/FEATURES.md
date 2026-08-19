@@ -16,33 +16,70 @@ they must not be recreated with private compatibility shims.
 |---|---|---|---|---|
 | CR-CORE-001 | Arcade vehicle handling | `omnidreams_game_engine` | Throttle, braking/reverse, steering return, and handbrake produce bounded deterministic motion. | `test_simulation.py` |
 | CR-CORE-002 | Canonical application input | application/engine | The app declares the stock `driver_command`; host-provided keyboard/SDL gamepad values become the same engine `DriverCommand`. | `test_application.py`, `test_input.py` |
+| CR-CORE-003 | Hosted application lifecycle | application | The installed app uses the public application/session contracts for discovery, stepping, completion, and cleanup with stock local-window and WebRTC hosting. | `test_application.py`; upstream application bridge tests |
 | CR-CORE-004 | Scene conditioning | engine | Simulated poses rasterize directly through Ludus into OmniDreams HD-map chunks without importing Interactive Drive. | provider tests; manual GPU smoke |
 | CR-CORE-005 | Causal presentation alignment | engine | Generated frame zero uses rollout-boundary state; later frames use preceding conditioning state. | `test_alignment.py`, `test_provider.py` |
+| CR-CORE-006 | Synchronized game output | application/engine | Generated results carry collision-checked `application_frames` containing score, timers, fare, passenger, target, and session state aligned to the video frames. | `test_application.py`, `test_provider.py` |
 | CR-GAME-001 | Route-valid fares | `crazy_robotaxi` | Pickups lie on the scene route and dropoffs are reachable and sufficiently separated when the route permits. | `test_game.py` |
 | CR-GAME-002 | Timer and scoring | game | Pickup starts a fare, arrival awards remaining-time score and bonus time, expiry fails the fare, and global expiry ends the hosted session. | `test_game.py`, `test_application.py` |
 | CR-GAME-003 | Pickup passengers | game | Visible pickups create pedestrian trajectories in conditioning and collected pickups disappear on the completion frame. | `test_game.py`, `test_provider.py` |
 | CR-LAUNCH-001 | New application launch | game | `flashdreams-run crazy-robotaxi` is discovered from `flashdreams.applications`; stock local-window and WebRTC outputs use the same application session. | `test_application.py`, CLI no-GPU smoke |
+| CR-LAUNCH-002 | Application-owned model runtime | application | One OmniDreams runtime is created lazily on the model worker, reused across isolated sessions, and closed by the application lifecycle. | `test_application.py` |
+| CR-LAUNCH-003 | Warmup and performance presets | application | WebRTC can warm leading AR specializations, and standard/perf/native-perf select integration-owned OmniDreams configs without importing Interactive Drive. | `test_application.py`; manual GPU validation |
+| CR-LAUNCH-004 | Sequential completed games | application/host | A completed WebRTC generation can start a fresh game on the retained peer and shared model runtime. | upstream application WebRTC tests; `test_application.py` session-isolation test |
+
+## Implemented FlashDreams integration
+
+`crazy-robotaxi` is registered through `flashdreams.applications` and runs from
+the shared `flashdreams-run` entry point without a private runner or launch
+loop. Stock local-window and WebRTC hosting consume the same application
+session. Keyboard and generic SDL gamepad input arrive through the required
+canonical `driver_command` modality and are translated once into the engine's
+transport-neutral `DriverCommand`.
+
+The application lazily constructs one public `OmnidreamsRuntime` on the model
+worker and closes it through the application lifecycle. Sessions retain only
+their own OmniDreams cache, provider, simulation, and game state. Normal game
+expiry completes through `next_step_requirements() -> None`, and subsequent
+WebRTC games reuse the peer and model runtime while creating isolated session
+state.
+
+The standalone engine advances simulation, fares, timers, scoring, passengers,
+and HD-map conditioning without importing Interactive Drive. Each generated
+result carries collision-checked, causally aligned `application_frames`
+metadata for the output sink; rendering that payload remains separately
+API-blocked.
+
+WebRTC warmup uses neutral driving windows to exercise the leading seven
+autoregressive specializations. `--model-preset standard|perf|native-perf`
+selects only integration-owned OmniDreams configurations, with `perf` as the
+default. Session reset rebuilds model and game state on the model worker, while
+the missing active-game reset input/control path remains deferred below.
 
 ## API-blocked deferrals
 
 ### CR-DEFER-004 — In-session restart
 
-Status: blocked by the WIP application API, not cancelled.
+Status: reset implementation and sequential completed games are included;
+active-game user initiation remains API-blocked, not cancelled.
 
-The upstream application shim rejects `reset()` and the public session contract
-has no reset/generation transition. The previous Escape/restart behavior cannot
-be preserved correctly because model cache, simulation, game, renderer,
-canonical input, and causal alignment must reset atomically.
+The public session now supports reset, and Crazy Robotaxi resets its model
+cache, simulation, game, renderer timeline, and causal alignment on the model
+worker. The application bridge still cannot turn a stock canonical input into
+a host reset decision, so the previous Escape/restart action cannot reach that
+implementation during an active game.
 
 Restoration target:
 
-- Consume a public host-coordinated reset/recreate decision.
-- Reset every state owner above and call `OutputSink.begin_generation` exactly
-  once for the new generation.
+- Add a public edge-triggered reset action and bridge it to the host's reset
+  decision.
+- Clear held canonical input and call `OutputSink.begin_generation` exactly
+  once after the implemented state reset.
 - Acceptance requires deterministic reset parity, held-key clearing, no stale
   video delivery, and at least two reset cycles in a CPU fake-session test.
 
-API dependency: public application reset/recreate lifecycle. See
+API dependency: public canonical reset action and application-to-host control
+mapping. See
 [API_FINDINGS.md](API_FINDINGS.md#in-session-restart).
 
 ### CR-DEFER-005 — High-score persistence and name entry
@@ -133,6 +170,44 @@ Restoration target:
 API dependency: CLI/output-target selection of an application-compatible
 paired `IOFactory`. See
 [API_FINDINGS.md](API_FINDINGS.md#deterministic-replay-and-headless-output).
+
+### CR-DEFER-009 — WebRTC geometry from application sessions
+
+Status: blocked by output-target setup, not cancelled.
+
+The application declares output geometry in `SessionInfo`, but stock WebRTC
+serving independently defaults to 1280x720 at 30 FPS and the CLI has no generic
+geometry override. This blocks a truthful 1280x704 default and the 1168x640
+performance-manifest shape through `flashdreams-run`.
+
+Restoration target:
+
+- Resolve encoder and browser metadata geometry from validated session info,
+  or validate explicit generic host overrides against it.
+- Acceptance requires non-720p application WebRTC tests for software and NVENC
+  setup plus browser chunk metadata parity.
+
+API dependency: session-aware WebRTC output-target setup. See
+[API_FINDINGS.md](API_FINDINGS.md#webrtc-output-geometry).
+
+## Non-API follow-up
+
+### CR-FOLLOWUP-001 — Exact performance-manifest extraction and validation
+
+Status: not blocked by the application API; not yet implemented or validated.
+
+The selectable neutral OmniDreams presets do not consume the Interactive Drive
+performance manifest. Its native DiT/FP8 KV-cache backend, `[1000, 100]`
+denoising schedule, `skip_finalize_kv_cache`, and 1168x640 runtime shape still
+need an integration-neutral OmniDreams configuration before the game can adopt
+them without depending on Interactive Drive.
+
+Acceptance requires a fixed-input GPU comparison of startup/prewarm and
+steady-state timings, reset and sequential-session coverage, recorded active
+backend/configuration, and quality artifacts. Cold compile/cache-fill chunks
+must remain separate from steady-state results. Until that validation exists,
+the current preset selector is configuration reuse rather than a Crazy
+Robotaxi performance claim.
 
 ## Previously approved deferrals
 

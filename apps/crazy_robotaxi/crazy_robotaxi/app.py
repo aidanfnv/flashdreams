@@ -12,7 +12,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
-from omnidreams.config import RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE
+from omnidreams.config import (
+    RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE,
+    RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_NATIVE_PERF,
+    RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_PERF,
+)
 from omnidreams.demo.runtime import OmnidreamsRuntime, OmnidreamsRuntimeOptions
 from omnidreams.demo.spec import (
     DEFAULT_OMNIDREAMS_WEBRTC_SCENE_UUID,
@@ -27,6 +31,7 @@ from omnidreams_game_engine.provider import (
 from omnidreams_game_engine.scenario import OmnidreamsGameScenario
 
 from flashdreams.demo import (
+    ApplicationWarmupSessionInputs,
     CanonicalInputSchema,
     CanonicalInputWindow,
     IFlashDreamsApplication,
@@ -35,12 +40,23 @@ from flashdreams.demo import (
 )
 from flashdreams.infra.config import derive_config
 from flashdreams.infra.results import StepResult
+from flashdreams.infra.time import TimeWindow
 from flashdreams.runtime import DRIVER_COMMAND, InferenceConfig, StepRequirements
 
 from .game import CrazyRobotaxiGame, TaxiGameConfig
 
 RuntimeFactory = Callable[..., Any]
 ProviderFactory = Callable[..., OmnidreamsGameInputProvider]
+
+_MODEL_PRESETS = {
+    "standard": RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE,
+    "perf": RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_PERF,
+    "native-perf": RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_NATIVE_PERF,
+}
+"""Integration-owned OmniDreams runner presets exposed by the game."""
+
+_WEBRTC_WARMUP_BLOCK_COUNT = 7
+"""Leading AR blocks that cover the current compiled model specializations."""
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -69,8 +85,17 @@ class CrazyRobotaxiApplication(IFlashDreamsApplication):
 
     session_type: type[CrazyRobotaxiApplicationSession]
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        runtime_factory: RuntimeFactory = OmnidreamsRuntime,
+        provider_factory: ProviderFactory = OmnidreamsGameInputProvider,
+    ) -> None:
+        self._runtime_factory = runtime_factory
+        self._provider_factory = provider_factory
         self._session_config: CrazyRobotaxiSessionConfig | None = None
+        self._runtime: Any | None = None
+        self._closed = False
 
     @property
     def input_schema(self) -> CanonicalInputSchema:
@@ -80,9 +105,13 @@ class CrazyRobotaxiApplication(IFlashDreamsApplication):
             description="Crazy Robotaxi driving controls.",
         )
 
+    @property
+    def supports_session_reset(self) -> bool:
+        """Return whether game sessions can rebuild all per-generation state."""
+        return True
+
     def init(self, commandline_args: Sequence[str]) -> None:
         """Parse application arguments without constructing GPU resources."""
-        defaults = RUNNER_SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE
         parser = argparse.ArgumentParser(prog="flashdreams-run crazy-robotaxi")
         parser.add_argument("--device", default="cuda")
         parser.add_argument("--scene-path", type=Path)
@@ -98,6 +127,11 @@ class CrazyRobotaxiApplication(IFlashDreamsApplication):
         parser.add_argument("--game-time-s", type=float, default=60.0)
         parser.add_argument("--game-seed", type=int, default=42)
         parser.add_argument(
+            "--model-preset",
+            choices=tuple(_MODEL_PRESETS),
+            default="perf",
+        )
+        parser.add_argument(
             "--compile",
             action=argparse.BooleanOptionalAction,
             default=None,
@@ -112,6 +146,7 @@ class CrazyRobotaxiApplication(IFlashDreamsApplication):
         if not math.isfinite(args.game_time_s) or args.game_time_s <= 0:
             raise ValueError("--game-time-s must be finite and greater than zero.")
 
+        defaults = _MODEL_PRESETS[args.model_preset]
         pipeline_config = defaults.pipeline
         if args.compile is not None:
             pipeline_config = derive_config(
@@ -139,12 +174,70 @@ class CrazyRobotaxiApplication(IFlashDreamsApplication):
         )
 
     def create_session(self) -> IFlashDreamsApplicationSession:
-        """Create an isolated game/model session after application init."""
-        if self._session_config is None:
+        """Create an isolated game session on the retained model runtime."""
+        config = self._session_config
+        if config is None:
             raise RuntimeError(
                 "CrazyRobotaxiApplication.init() must run before create_session()."
             )
-        return self.session_type(config=self._session_config)
+        if self._closed:
+            raise RuntimeError(
+                "Cannot create a session from a closed Crazy Robotaxi application."
+            )
+        runtime = self._runtime
+        if runtime is None:
+            runtime = self._runtime_factory(
+                config=InferenceConfig(
+                    model_id="omnidreams",
+                    preset_id=config.preset_id,
+                    device=config.device,
+                    seed=config.game_seed,
+                ),
+                options=OmnidreamsRuntimeOptions(
+                    pipeline_config=config.pipeline_config,
+                    release_oneshot_encoders_after_cache_init=False,
+                ),
+            )
+            self._runtime = runtime
+        return self.session_type(
+            config=config,
+            runtime=runtime,
+            provider_factory=self._provider_factory,
+        )
+
+    def create_model_warmup_sessions(
+        self,
+        spec: Any,
+        scenario: Any,
+    ) -> Sequence[ApplicationWarmupSessionInputs]:
+        """Warm leading autoregressive specializations for WebRTC serving."""
+        del scenario
+        if spec.output.mode != "webrtc":
+            return ()
+        config = self._session_config
+        if config is None:
+            raise RuntimeError(
+                "CrazyRobotaxiApplication.init() must run before warmup planning."
+            )
+        warmup_blocks = min(config.total_blocks, _WEBRTC_WARMUP_BLOCK_COUNT)
+        return (
+            ApplicationWarmupSessionInputs(
+                step_inputs=tuple(
+                    _neutral_driver_window(block_index)
+                    for block_index in range(warmup_blocks)
+                )
+            ),
+        )
+
+    def close(self) -> None:
+        """Release the application-lifetime OmniDreams runtime."""
+        if self._closed:
+            return
+        self._closed = True
+        runtime = self._runtime
+        self._runtime = None
+        if runtime is not None:
+            runtime.close()
 
 
 class CrazyRobotaxiApplicationSession(IFlashDreamsApplicationSession):
@@ -154,23 +247,22 @@ class CrazyRobotaxiApplicationSession(IFlashDreamsApplicationSession):
         self,
         *,
         config: CrazyRobotaxiSessionConfig,
-        runtime_factory: RuntimeFactory = OmnidreamsRuntime,
+        runtime: Any,
         provider_factory: ProviderFactory = OmnidreamsGameInputProvider,
     ) -> None:
         self.config = config
-        self._runtime_factory = runtime_factory
+        self._runtime = runtime
         self._provider_factory = provider_factory
-        self._runtime: Any | None = None
         self._model_session: Any | None = None
         self._provider: OmnidreamsGameInputProvider | None = None
         self._finished = False
         self._closed = False
 
     def init(self) -> None:
-        """Construct the model runtime, scene provider, and first cache."""
+        """Construct the scene provider and first cache on the shared runtime."""
         if self._closed:
             raise RuntimeError("Cannot initialize a closed Crazy Robotaxi session.")
-        if self._runtime is not None:
+        if self._model_session is not None:
             return
         model_scenario = _model_scenario(self.config)
         game_scenario = OmnidreamsGameScenario(
@@ -187,25 +279,14 @@ class CrazyRobotaxiApplicationSession(IFlashDreamsApplicationSession):
                 )
             ),
         )
-        runtime = self._runtime_factory(
-            config=InferenceConfig(
-                model_id="omnidreams",
-                preset_id=self.config.preset_id,
-                device=self.config.device,
-                seed=self.config.game_seed,
-            ),
-            options=OmnidreamsRuntimeOptions(
-                pipeline_config=self.config.pipeline_config,
-            ),
-        )
         try:
-            model_session = runtime.start_session(provider.prepare_initial_input())
+            model_session = self._runtime.start_session(
+                provider.prepare_initial_input()
+            )
         except BaseException:
             provider.close()
-            runtime.close()
             raise
         self._provider = provider
-        self._runtime = runtime
         self._model_session = model_session
 
     def session_info(self) -> SessionInfo:
@@ -263,6 +344,16 @@ class CrazyRobotaxiApplicationSession(IFlashDreamsApplicationSession):
         self._finished = _game_finished(result.metadata)
         return result
 
+    def reset(self) -> None:
+        """Reset model, simulation, game, renderer timeline, and alignment state."""
+        if self._closed:
+            raise RuntimeError("Cannot reset a closed Crazy Robotaxi session.")
+        provider = self._require_provider()
+        model_session = self._require_model_session()
+        provider.reset()
+        model_session.reset(provider.prepare_initial_input())
+        self._finished = False
+
     def close(self) -> None:
         """Release session, renderer, and model resources idempotently."""
         if self._closed:
@@ -272,12 +363,10 @@ class CrazyRobotaxiApplicationSession(IFlashDreamsApplicationSession):
             if self._model_session is not None:
                 self._model_session.close()
         finally:
-            try:
-                if self._provider is not None:
-                    self._provider.close()
-            finally:
-                if self._runtime is not None:
-                    self._runtime.close()
+            if self._provider is not None:
+                self._provider.close()
+        self._model_session = None
+        self._provider = None
 
     def _require_model_session(self) -> Any:
         if self._model_session is None:
@@ -324,6 +413,26 @@ def _driver_command(value: object) -> DriverCommand:
         steer=float(str(value.get("steer", 0.0))),
         handbrake=bool(value.get("stop", False)),
         reverse=bool(value.get("reverse", False)),
+    )
+
+
+def _neutral_driver_window(block_index: int) -> CanonicalInputWindow:
+    return CanonicalInputWindow(
+        values={
+            DRIVER_COMMAND.name: DRIVER_COMMAND.value(
+                {
+                    "throttle": 0.0,
+                    "brake": 0.0,
+                    "steer": 0.0,
+                    "stop": False,
+                    "reverse": False,
+                }
+            )
+        },
+        window=TimeWindow(
+            start_s=float(block_index),
+            end_s=float(block_index + 1),
+        ),
     )
 
 
