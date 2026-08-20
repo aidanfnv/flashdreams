@@ -18,14 +18,15 @@
 from .alignment import CausalStateAligner
 from .application import GameApplication, GameFrameUpdate
 from .input import (
-    GAME_DRIVER_COMMAND,
-    GAMEPAD_STATE_EVENT,
     AnalogDriverCommandConverter,
+    AnalogDrivingEventData,
+    DriverCommandEventData,
     EvdevWheelReader,
     KeyboardDriverCommandConverter,
     WheelProfile,
     analog_state_event,
-    game_user_input_schema,
+    driver_command_event,
+    keyboard_key_event,
     normalize_axis,
 )
 from .simulation import ArcadeVehicleConfig, ArcadeVehicleSimulator
@@ -38,13 +39,13 @@ from .types import (
 )
 
 __all__ = [
-    "GAME_DRIVER_COMMAND",
-    "GAMEPAD_STATE_EVENT",
+    "AnalogDrivingEventData",
     "AnalogDriverCommandConverter",
     "ArcadeVehicleConfig",
     "ArcadeVehicleSimulator",
     "CausalStateAligner",
     "DriverCommand",
+    "DriverCommandEventData",
     "DynamicActorTrajectory",
     "EngineFrame",
     "EvdevWheelReader",
@@ -55,6 +56,7 @@ __all__ = [
     "VehicleState",
     "WheelProfile",
     "analog_state_event",
-    "game_user_input_schema",
+    "driver_command_event",
+    "keyboard_key_event",
     "normalize_axis",
 ]

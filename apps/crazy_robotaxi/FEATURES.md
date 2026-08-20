@@ -4,82 +4,93 @@ This ledger is the scope authority for the ground-up application rewrite. A
 feature may not be removed, deferred, or declared complete without updating
 this file and the tests named by the relevant entry.
 
-The 2026-08-14 rebase moved Crazy Robotaxi onto
-`IFlashDreamsApplication` / `IFlashDreamsApplicationSession`. The user-approved
-exception for features the WIP API cannot express is recorded below. Those
-features are deferred only until their explicit API unblock conditions exist;
-they must not be recreated with private compatibility shims.
+The 2026-08-20 rebase ports the game onto the official V2 `IApplication`,
+`ISession`, input-event, session-description, result, reset, and two-thread
+session-runner contracts. The current CLI/client-window host and lower-level
+OmniDreams model-session boundaries remain behind explicitly named V1
+compatibility surfaces because V2 does not define replacements yet. The
+user-approved exception for features the WIP API cannot express is recorded
+below.
 
 ## Included in the application-API milestone
 
 | ID | Capability | Owner | Acceptance criteria | Tests |
 |---|---|---|---|---|
 | CR-CORE-001 | Arcade vehicle handling | `omnidreams_game_engine` | Throttle, braking/reverse, steering return, and handbrake produce bounded deterministic motion. | `test_simulation.py` |
-| CR-CORE-002 | Canonical application input | application/engine | The app declares the stock `driver_command`; host-provided keyboard/SDL gamepad values become the same engine `DriverCommand`. | `test_application.py`, `test_input.py` |
-| CR-CORE-003 | Hosted application lifecycle | application | The installed app uses the public application/session contracts for discovery, stepping, completion, and cleanup with stock local-window and WebRTC hosting. | `test_application.py`; upstream application bridge tests |
+| CR-CORE-002 | V2 application input | application/engine | The V2 session consumes timestamped `UserInputEvents`; populated keyboard, analog, and normalized driver-command event data produce the same engine `DriverCommand`. | `test_application.py`, `test_input.py` |
+| CR-CORE-003 | V2 application lifecycle | application | `CrazyRobotaxiV2Application` and `CrazyRobotaxiV2Session` implement the official V2 contracts; `run_session` drives reset and close, while explicitly named V1 adapters preserve current CLI discovery and stock local-window/WebRTC hosting. | `test_application.py`; upstream V2 runner tests |
 | CR-CORE-004 | Scene conditioning | engine | Simulated poses rasterize directly through Ludus into OmniDreams HD-map chunks without importing Interactive Drive. | provider tests; manual GPU smoke |
 | CR-CORE-005 | Causal presentation alignment | engine | Generated frame zero uses rollout-boundary state; later frames use preceding conditioning state. | `test_alignment.py`, `test_provider.py` |
-| CR-CORE-006 | Synchronized game output | application/engine | Generated results carry collision-checked `application_frames` containing score, timers, fare, passenger, target, and session state aligned to the video frames. | `test_application.py`, `test_provider.py` |
+| CR-CORE-006 | Synchronized V2 game output | application/engine | `CrazyRobotaxiStepResult` extends V2 `StepResult` with collision-checked `application_frames` containing score, timers, fare, passenger, target, and session state aligned to video. | `test_application.py`, `test_provider.py` |
 | CR-GAME-001 | Route-valid fares | `crazy_robotaxi` | Pickups lie on the scene route and dropoffs are reachable and sufficiently separated when the route permits. | `test_game.py` |
 | CR-GAME-002 | Timer and scoring | game | Pickup starts a fare, arrival awards remaining-time score and bonus time, expiry fails the fare, and global expiry ends the hosted session. | `test_game.py`, `test_application.py` |
 | CR-GAME-003 | Pickup passengers | game | Visible pickups create pedestrian trajectories in conditioning and collected pickups disappear on the completion frame. | `test_game.py`, `test_provider.py` |
-| CR-LAUNCH-001 | New application launch | game | `flashdreams-run crazy-robotaxi` is discovered from `flashdreams.applications`; stock local-window and WebRTC outputs use the same application session. | `test_application.py`, CLI no-GPU smoke |
-| CR-LAUNCH-002 | Application-owned model runtime | application | One OmniDreams runtime is created lazily on the model worker, reused across isolated sessions, and closed by the application lifecycle. | `test_application.py` |
+| CR-LAUNCH-001 | Transitional application launch | game | `flashdreams-run crazy-robotaxi` is discovered from `flashdreams.applications`; the named V1 host adapter drives the same V2 session for local-window and WebRTC output. | `test_application.py`, CLI help smoke |
+| CR-LAUNCH-002 | Application-owned model runtime | application | One OmniDreams runtime is created lazily by the application, reused across isolated sessions, and closed by the V2 application lifecycle. | `test_application.py` |
 | CR-LAUNCH-003 | Warmup and performance presets | application | WebRTC can warm leading AR specializations, and standard/perf/native-perf select integration-owned OmniDreams configs without importing Interactive Drive. | `test_application.py`; manual GPU validation |
 | CR-LAUNCH-004 | Sequential completed games | application/host | A completed WebRTC generation can start a fresh game on the retained peer and shared model runtime. | upstream application WebRTC tests; `test_application.py` session-isolation test |
 
 ## Implemented FlashDreams integration
 
-`crazy-robotaxi` is registered through `flashdreams.applications` and runs from
-the shared `flashdreams-run` entry point without a private runner or launch
-loop. Stock local-window and WebRTC hosting consume the same application
-session. Keyboard and generic SDL gamepad input arrive through the required
-canonical `driver_command` modality and are translated once into the engine's
-transport-neutral `DriverCommand`.
+`CrazyRobotaxiV2Application` and `CrazyRobotaxiV2Session` implement the official
+V2 application/session contracts added by #490. The session consumes V2
+`UserInputEvents`, publishes V2 `SessionDesc`, and returns
+`CrazyRobotaxiStepResult`, a V2 `StepResult` subtype carrying synchronized game
+output. It accepts the standard populated keyboard edges directly, retains held
+key state, gives a connected analog source priority, and accepts normalized
+driver-command events for the temporary V1 host boundary. The official
+`run_session` reset path atomically rebuilds the model cache, simulation, game,
+renderer timeline, and causal alignment before the first post-reset step.
 
-The application lazily constructs one public `OmnidreamsRuntime` on the model
-worker and closes it through the application lifecycle. Sessions retain only
-their own OmniDreams cache, provider, simulation, and game state. Normal game
-expiry completes through `next_step_requirements() -> None`, and subsequent
-WebRTC games reuse the peer and model runtime while creating isolated session
-state.
+`crazy-robotaxi` remains launchable through `flashdreams-run` without a private
+runner or launch loop. Because #490 did not add V2 `ApplicationRunner`, CLI
+discovery, or concrete client windows, `CrazyRobotaxiV1ApplicationAdapter` and
+`CrazyRobotaxiV1SessionAdapter` are the temporary playable-host boundary.
+Their exact conversions and deletion criteria are recorded in
+[API_FINDINGS.md](API_FINDINGS.md#compatibility-surfaces-to-remove).
+
+The V2 application lazily constructs one public `OmnidreamsRuntime` and closes
+it through its lifecycle. This is the remaining lower-level V1 model boundary
+because V2 has no model runtime/session/input contract.
+Sessions retain only their own OmniDreams cache, provider, simulation, and game
+state. Normal game expiry completes through the temporary model requirements,
+and subsequent WebRTC games reuse the peer and model runtime while creating
+isolated session state.
 
 The standalone engine advances simulation, fares, timers, scoring, passengers,
-and HD-map conditioning without importing Interactive Drive. Each generated
-result carries collision-checked, causally aligned `application_frames`
-metadata for the output sink; rendering that payload remains separately
-API-blocked.
+and HD-map conditioning without importing Interactive Drive. Each generated V2
+result carries collision-checked, causally aligned `application_frames`;
+generic discovery and rendering of that extension remain API-blocked.
 
 WebRTC warmup uses neutral driving windows to exercise the leading seven
 autoregressive specializations. `--model-preset standard|perf|native-perf`
 selects only integration-owned OmniDreams configurations, with `perf` as the
-default. Session reset rebuilds model and game state on the model worker, while
-the missing active-game reset input/control path remains deferred below.
+default. Session reset rebuilds model and game state on the generation thread,
+while delivery from a concrete V2 client window remains deferred below.
 
 ## API-blocked deferrals
 
 ### CR-DEFER-004 — In-session restart
 
-Status: reset implementation and sequential completed games are included;
-active-game user initiation remains API-blocked, not cancelled.
+Status: V2 reset input and sequential completed games are included; delivery
+from a concrete V2 client window remains API-blocked, not cancelled.
 
-The public session now supports reset, and Crazy Robotaxi resets its model
-cache, simulation, game, renderer timeline, and causal alignment on the model
-worker. The application bridge still cannot turn a stock canonical input into
-a host reset decision, so the previous Escape/restart action cannot reach that
-implementation during an active game.
+`ResetUserInputEventData` now makes V2 `run_session` reset the session, restart
+at step zero, and discard queued or in-flight results from the abandoned
+generation. The game reset rebuilds its model cache, simulation, game, renderer
+timeline, causal alignment, and held input state. No concrete V2 client window
+exists, and the V1 host command has no reset field, so Escape cannot deliver the
+standard event in the playable host yet.
 
 Restoration target:
 
-- Add a public edge-triggered reset action and bridge it to the host's reset
-  decision.
-- Clear held canonical input and call `OutputSink.begin_generation` exactly
-  once after the implemented state reset.
+- Make concrete local-window and WebRTC V2 clients translate the reset control
+  into `ResetUserInputEventData`.
+- Preserve the runner's generation tagging and stale-result discard behavior.
 - Acceptance requires deterministic reset parity, held-key clearing, no stale
   video delivery, and at least two reset cycles in a CPU fake-session test.
 
-API dependency: public canonical reset action and application-to-host control
-mapping. See
+API dependency: concrete V2 client windows and their reset-control mapping. See
 [API_FINDINGS.md](API_FINDINGS.md#in-session-restart).
 
 ### CR-DEFER-005 — High-score persistence and name entry
@@ -109,8 +120,8 @@ handlers. See
 
 ### CR-DEFER-006 — Full wheel support
 
-Status: engine converters, evdev calibration, and tests retained; the new host
-cannot connect them end-to-end.
+Status: engine converters and evdev calibration now use V2 event types and are
+tested; no V2 client window can connect them end-to-end.
 
 The stock local window supplies generic SDL gamepad axes, but there is no
 application input-handler composition hook for calibrated evdev devices.
@@ -120,19 +131,20 @@ Gamepad snapshots.
 Restoration target:
 
 - Compose the existing `EvdevWheelReader` with host-owned local input.
-- Carry browser Gamepad snapshots through the same declared canonical driver
-  modality, including disconnect fallback.
+- Carry browser Gamepad snapshots through populated V2 events, including
+  disconnect fallback.
 - Preserve steering/pedal calibration, handbrake, reverse, and reset mappings.
 - Acceptance requires native profile tests, browser payload tests, disconnect
   fallback, and command parity between both transports.
 
-API dependency: application-contributed paired `IOFactory` selection and
-schema-validated continuous WebRTC snapshots. See
+API dependency: populated V2 gamepad/wheel event contracts and concrete native
+and WebRTC producers. See
 [API_FINDINGS.md](API_FINDINGS.md#full-wheel-support).
 
 ### CR-DEFER-007 — Minimal game HUD
 
-Status: presentation payload retained; renderer integration is blocked.
+Status: presentation payload is carried by a V2 `StepResult` subtype; generic
+renderer integration is blocked.
 
 The stock application sinks do not accept application-owned browser resources
 or a local presenter/view plug-in. Video and synchronized
@@ -162,33 +174,55 @@ Status: output sinks exist, but the CLI pairs MP4/null output with
 Restoration target:
 
 - Select a replay/CI input router paired with MP4 or null presentation.
-- Consume scripted canonical commands with deterministic time windows; do not
+- Consume scripted V2 driver events with deterministic time windows; do not
   special-case replay inside the game session.
-- Acceptance requires a two-step CPU replay through `run_application`, an MP4
-  fake-writer test, and deterministic command/result metadata parity.
+- Acceptance requires a two-step CPU replay through the V2 application runner,
+  an MP4 fake-writer test, and deterministic command/result metadata parity.
 
-API dependency: CLI/output-target selection of an application-compatible
-paired `IOFactory`. See
+API dependency: V2 `ApplicationRunner`, CLI/client-window selection, replay
+input, and MP4/null client windows. See
 [API_FINDINGS.md](API_FINDINGS.md#deterministic-replay-and-headless-output).
 
 ### CR-DEFER-009 — WebRTC geometry from application sessions
 
 Status: blocked by output-target setup, not cancelled.
 
-The application declares output geometry in `SessionInfo`, but stock WebRTC
-serving independently defaults to 1280x720 at 30 FPS and the CLI has no generic
-geometry override. This blocks a truthful 1280x704 default and the 1168x640
-performance-manifest shape through `flashdreams-run`.
+The V2 application declares output geometry in `SessionDesc`, but the currently
+playable V1 WebRTC serving independently defaults to 1280x720 at 30 FPS and the
+CLI has no generic geometry override. This blocks a truthful 1280x704 default
+and the 1168x640 performance-manifest shape through `flashdreams-run`.
 
 Restoration target:
 
-- Resolve encoder and browser metadata geometry from validated session info,
+- Resolve encoder and browser metadata geometry from validated `SessionDesc`,
   or validate explicit generic host overrides against it.
 - Acceptance requires non-720p application WebRTC tests for software and NVENC
   setup plus browser chunk metadata parity.
 
 API dependency: session-aware WebRTC output-target setup. See
 [API_FINDINGS.md](API_FINDINGS.md#webrtc-output-geometry).
+
+### CR-DEFER-010 — Game-driven session completion and model chunk requests
+
+Status: the game and lower-level OmniDreams session know when to stop and how
+many conditioning frames to request, but V2 cannot express either decision.
+
+The V1 host adapter remains playable because it exposes the lower-level
+`next_step_requirements()` result and returns `None` when the game leaves
+`playing`. Direct V2 `run_session(steps=None)` can only stop on a client close;
+after game expiry it would attempt another step and the game would have to
+raise. Fixed-step runs also cannot request OmniDreams' variable next chunk.
+
+Restoration target:
+
+- Add a clean V2 application-completion result or control signal.
+- Add a V2 model-step requirement (or equivalent scheduling contract) that can
+  request the next step index and conditioning-frame count.
+- Acceptance requires natural timer expiry through `run_session`, no exception
+  for normal completion, and variable-chunk fake-model coverage.
+
+API dependency: V2 session completion and model-driven step requirements. See
+[API_FINDINGS.md](API_FINDINGS.md#application-completion-and-model-step-requirements).
 
 ## Non-API follow-up
 

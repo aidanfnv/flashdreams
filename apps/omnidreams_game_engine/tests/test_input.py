@@ -17,73 +17,68 @@ from __future__ import annotations
 
 import pytest
 from omnidreams_game_engine.input import (
-    GAME_DRIVER_COMMAND,
     AnalogDriverCommandConverter,
     AxisCalibration,
+    DriverCommandEventData,
     KeyboardDriverCommandConverter,
     analog_state_event,
+    keyboard_key_event,
     normalize_axis,
 )
-from omnidreams_game_engine.input import game_user_input_schema
 
-from flashdreams.infra.time import TimeWindow
-from flashdreams.runtime import InputCanonicalizer, UserInputEvent, UserInputs
+from flashdreams.runtime_v2.user_input_events import UserInputEvents
 
 pytestmark = pytest.mark.ci_cpu
 
 
 def test_keyboard_is_level_triggered_and_supports_handbrake() -> None:
-    canonicalizer = InputCanonicalizer((KeyboardDriverCommandConverter(),))
-    window = TimeWindow(start_s=0.0, end_s=1.0)
-    inputs = UserInputs(
-        events=(
-            UserInputEvent(
-                timestamp_s=0.1, event_type="key_down", payload={"key": "w"}
-            ),
-            UserInputEvent(
-                timestamp_s=0.2, event_type="key_down", payload={"key": "space"}
-            ),
-        )
+    converter = KeyboardDriverCommandConverter()
+    inputs = UserInputEvents(
+        [
+            keyboard_key_event(timestamp_us=100_000, key="w", pressed=True),
+            keyboard_key_event(timestamp_us=200_000, key="space", pressed=True),
+        ]
     )
-    first = canonicalizer.canonicalize(
-        inputs, window=window, source_schema=game_user_input_schema()
-    )
-    quiet = canonicalizer.canonicalize(
-        UserInputs(), window=window, source_schema=game_user_input_schema()
-    )
-    assert first.values[GAME_DRIVER_COMMAND.name]["throttle"] == 1.0
-    assert quiet.values[GAME_DRIVER_COMMAND.name]["handbrake"] is True
+    first = converter.convert(inputs)
+    quiet = converter.convert(UserInputEvents([]))
+    assert isinstance(first, DriverCommandEventData)
+    assert first.command.throttle == 1.0
+    assert quiet.command.handbrake is True
 
 
 def test_connected_analog_device_has_priority_then_yields_to_keyboard() -> None:
-    canonicalizer = InputCanonicalizer(
-        (AnalogDriverCommandConverter(priority=100), KeyboardDriverCommandConverter())
-    )
-    window = TimeWindow(start_s=0.0, end_s=1.0)
-    events = UserInputs(
-        events=(
-            UserInputEvent(
-                timestamp_s=0.1, event_type="key_down", payload={"key": "w"}
+    analog_converter = AnalogDriverCommandConverter()
+    keyboard_converter = KeyboardDriverCommandConverter()
+    events = UserInputEvents(
+        [
+            keyboard_key_event(timestamp_us=100_000, key="w", pressed=True),
+            analog_state_event(
+                timestamp_us=200_000,
+                steer=-0.5,
+                throttle=0.25,
+                brake=0.0,
             ),
-            analog_state_event(timestamp_s=0.2, steer=-0.5, throttle=0.25, brake=0.0),
+        ]
+    )
+    keyboard = keyboard_converter.convert(events)
+    analog = analog_converter.convert(events)
+    assert analog is not None
+    assert analog.command.throttle == 0.25
+    disconnected = analog_converter.convert(
+        UserInputEvents(
+            [
+                analog_state_event(
+                    timestamp_us=300_000,
+                    steer=0,
+                    throttle=0,
+                    brake=0,
+                    connected=False,
+                )
+            ]
         )
     )
-    analog = canonicalizer.canonicalize(
-        events, window=window, source_schema=game_user_input_schema()
-    )
-    assert analog.values[GAME_DRIVER_COMMAND.name]["throttle"] == 0.25
-    disconnected = canonicalizer.canonicalize(
-        UserInputs(
-            events=(
-                analog_state_event(
-                    timestamp_s=0.3, steer=0, throttle=0, brake=0, connected=False
-                ),
-            )
-        ),
-        window=window,
-        source_schema=game_user_input_schema(),
-    )
-    assert disconnected.values[GAME_DRIVER_COMMAND.name]["throttle"] == 1.0
+    assert disconnected is None
+    assert keyboard.command.throttle == 1.0
 
 
 def test_axis_calibration_supports_center_deadzone_and_inversion() -> None:

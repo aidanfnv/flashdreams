@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Canonical keyboard and analog driving input for OmniDreams games."""
+"""FlashDreams V2 keyboard and analog driving input for OmniDreams games."""
 
 from __future__ import annotations
 
@@ -23,60 +23,85 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import BinaryIO
 
 import yaml
+from numpy import uint64
 
-from flashdreams.infra.time import TimeWindow
-from flashdreams.runtime import (
-    CanonicalModality,
-    DeviceConverterSchema,
-    UserInputCapability,
+from flashdreams.api_v2.user_input_event_data import UserInputEventData
+from flashdreams.runtime_v2.user_input_event import (
+    KeyboardUserInputEventData,
     UserInputEvent,
-    UserInputs,
-    UserInputSchema,
 )
-from flashdreams.runtime.keyboard import KeyboardState, normalize_key
+from flashdreams.runtime_v2.user_input_events import UserInputEvents
 
 from .types import DriverCommand
 
-GAMEPAD_STATE_EVENT = "gamepad_state"
-"""Raw level-state event emitted by native HID and browser Gamepad sources."""
 
-GAME_DRIVER_COMMAND = CanonicalModality(
-    name="game_driver_command",
-    payload_fields=frozenset(
-        {"throttle", "brake", "steer", "handbrake", "reverse", "reset"}
-    ),
-    description="Normalized arcade driving intent shared by every input device.",
-)
+@dataclass(frozen=True, slots=True, eq=False)
+class AnalogDrivingEventData(UserInputEventData):
+    """One populated V2 wheel/gamepad state snapshot."""
 
-_GAMEPAD_FIELDS = frozenset(
-    {"connected", "throttle", "brake", "steer", "handbrake", "reverse", "reset"}
-)
+    command: DriverCommand
+    """Normalized analog driving state."""
+
+    connected: bool = True
+    """Whether the source device remains connected."""
+
+    source: str = "gamepad"
+    """Diagnostic source name for the device."""
+
+    @classmethod
+    def get_type_name(cls) -> str:
+        """Return the stable application event type."""
+        return "analog_driving_state"
 
 
-def game_user_input_schema() -> UserInputSchema:
-    """Describe raw keyboard and analog events understood by engine converters."""
-    return UserInputSchema(
-        capabilities=(
-            UserInputCapability(
-                event_type="key_down",
-                input_modality="keyboard",
-                payload_fields=frozenset({"key"}),
-            ),
-            UserInputCapability(
-                event_type="key_up",
-                input_modality="keyboard",
-                payload_fields=frozenset({"key"}),
-            ),
-            UserInputCapability(
-                event_type=GAMEPAD_STATE_EVENT,
-                input_modality="analog-driving",
-                payload_fields=_GAMEPAD_FIELDS,
-            ),
-        ),
-        description="Keyboard and wheel/gamepad driving controls.",
+@dataclass(frozen=True, slots=True, eq=False)
+class DriverCommandEventData(UserInputEventData):
+    """Transport-neutral V2 arcade-driving snapshot consumed by a game."""
+
+    command: DriverCommand
+    """Normalized command for one game step."""
+
+    @classmethod
+    def get_type_name(cls) -> str:
+        """Return the stable application event type."""
+        return "driver_command"
+
+
+def keyboard_key_event(*, timestamp_us: int, key: str, pressed: bool) -> UserInputEvent:
+    """Build one timestamped V2 keyboard edge.
+
+    Args:
+        timestamp_us: Microseconds since the start of the session.
+        key: Key name supplied by the input source.
+        pressed: Whether the event presses rather than releases the key.
+
+    Returns:
+        Event containing populated keyboard data.
+    """
+    return UserInputEvent(
+        timestamp=uint64(timestamp_us),
+        event_data=KeyboardUserInputEventData(key=key, pressed=pressed),
+    )
+
+
+def driver_command_event(
+    *, timestamp_us: int, command: DriverCommand
+) -> UserInputEvent:
+    """Build one timestamped canonical V2 driving snapshot.
+
+    Args:
+        timestamp_us: Microseconds since the start of the session.
+        command: Normalized command for the game step.
+
+    Returns:
+        Event containing the normalized driver command.
+    """
+    return UserInputEvent(
+        timestamp=uint64(timestamp_us),
+        event_data=DriverCommandEventData(command=command),
     )
 
 
@@ -136,7 +161,7 @@ class WheelProfile:
 
 
 class KeyboardDriverCommandConverter:
-    """Convert keyboard edges into the shared arcade driving modality."""
+    """Convert populated V2 keyboard edges into arcade driving snapshots."""
 
     _BINDINGS = {
         "throttle": frozenset({"w", "up"}),
@@ -145,55 +170,33 @@ class KeyboardDriverCommandConverter:
         "right": frozenset({"d", "right"}),
         "handbrake": frozenset({"space"}),
         "reverse": frozenset({"r"}),
-        "reset": frozenset({"escape"}),
     }
 
-    def __init__(self, *, priority: int = 0) -> None:
+    def __init__(self) -> None:
         keys = frozenset(key for values in self._BINDINGS.values() for key in values)
         self._supported_keys = keys
-        self._state = KeyboardState(supported_keys=keys)
-        self._schema = DeviceConverterSchema(
-            name="game-keyboard-driver-command",
-            produces=GAME_DRIVER_COMMAND,
-            device_kind="keyboard",
-            priority=priority,
-            consumes=(
-                UserInputCapability(
-                    event_type="key_down", payload_fields=frozenset({"key"})
-                ),
-                UserInputCapability(
-                    event_type="key_up", payload_fields=frozenset({"key"})
-                ),
-            ),
-        )
-
-    @property
-    def schema(self) -> DeviceConverterSchema:
-        """Return the converter compatibility declaration."""
-        return self._schema
+        self._pressed: set[str] = set()
 
     def reset(self) -> None:
         """Clear held-key state at a rollout boundary."""
-        self._state = KeyboardState(supported_keys=self._supported_keys)
+        self._pressed.clear()
 
-    def convert(
-        self, user_inputs: UserInputs, window: TimeWindow
-    ) -> Mapping[str, Any] | None:
+    def convert(self, user_inputs: UserInputEvents) -> DriverCommandEventData:
         """Convert keyboard events into one level-triggered command."""
-        del window
-        for event in user_inputs.events:
-            if event.event_type not in {"key_down", "key_up"}:
+        for event in user_inputs.get_events():
+            event_data = event.get_event_data()
+            if not isinstance(event_data, KeyboardUserInputEventData):
                 continue
-            key = event.payload.get("key")
-            if isinstance(key, str):
-                self._state.apply_event(
-                    event="keydown" if event.event_type == "key_down" else "keyup",
-                    key=key,
-                )
-        pressed = {normalize_key(key) for key in self._state.snapshot()}
+            key = _normalize_key(event_data.key)
+            if key not in self._supported_keys:
+                continue
+            if event_data.pressed:
+                self._pressed.add(key)
+            else:
+                self._pressed.discard(key)
 
         def held(action: str) -> bool:
-            return bool(self._BINDINGS[action] & pressed)
+            return bool(self._BINDINGS[action] & self._pressed)
 
         command = DriverCommand(
             throttle=1.0 if held("throttle") else 0.0,
@@ -201,56 +204,36 @@ class KeyboardDriverCommandConverter:
             steer=(1.0 if held("left") else 0.0) - (1.0 if held("right") else 0.0),
             handbrake=held("handbrake"),
             reverse=held("reverse"),
-            reset=held("reset"),
         )
-        return GAME_DRIVER_COMMAND.value(command.as_payload())
+        return DriverCommandEventData(command=command)
 
 
 class AnalogDriverCommandConverter:
-    """Convert native-wheel or browser-gamepad state into driving intent."""
+    """Convert V2 native-wheel or browser-gamepad state into driving intent."""
 
-    def __init__(self, *, priority: int = 100) -> None:
+    def __init__(self) -> None:
         self._connected = False
         self._command = DriverCommand()
-        self._schema = DeviceConverterSchema(
-            name="game-analog-driver-command",
-            produces=GAME_DRIVER_COMMAND,
-            device_kind="wheel",
-            priority=priority,
-            consumes=(
-                UserInputCapability(
-                    event_type=GAMEPAD_STATE_EVENT,
-                    payload_fields=_GAMEPAD_FIELDS,
-                ),
-            ),
-        )
-
-    @property
-    def schema(self) -> DeviceConverterSchema:
-        """Return the converter compatibility declaration."""
-        return self._schema
 
     def reset(self) -> None:
         """Drop retained analog device state."""
         self._connected = False
         self._command = DriverCommand()
 
-    def convert(
-        self, user_inputs: UserInputs, window: TimeWindow
-    ) -> Mapping[str, Any] | None:
+    def convert(self, user_inputs: UserInputEvents) -> DriverCommandEventData | None:
         """Return the latest analog command, yielding to keyboard when disconnected."""
-        del window
-        for event in user_inputs.events:
-            if event.event_type != GAMEPAD_STATE_EVENT:
+        for event in user_inputs.get_events():
+            event_data = event.get_event_data()
+            if not isinstance(event_data, AnalogDrivingEventData):
                 continue
-            self._connected = bool(event.payload.get("connected", True))
+            self._connected = event_data.connected
             if self._connected:
-                self._command = DriverCommand.from_payload(event.payload)
+                self._command = event_data.command
             else:
                 self._command = DriverCommand()
         if not self._connected:
             return None
-        return GAME_DRIVER_COMMAND.value(self._command.as_payload())
+        return DriverCommandEventData(command=self._command)
 
 
 class EvdevWheelReader:
@@ -284,7 +267,7 @@ class EvdevWheelReader:
             self._handle.close()
             self._handle = None
 
-    def sample(self, *, timestamp_s: float | None = None) -> UserInputEvent:
+    def sample(self, *, timestamp_us: int | None = None) -> UserInputEvent:
         """Drain available reports and return one normalized state event."""
         if self._handle is None:
             raise RuntimeError(
@@ -322,7 +305,9 @@ class EvdevWheelReader:
                     if code == button_code:
                         self._buttons[name] = bool(value)
         return analog_state_event(
-            timestamp_s=time.monotonic() if timestamp_s is None else timestamp_s,
+            timestamp_us=(
+                time.monotonic_ns() // 1_000 if timestamp_us is None else timestamp_us
+            ),
             steer=self._axes["steer"],
             throttle=self._axes["throttle"],
             brake=self._axes["brake"],
@@ -336,7 +321,7 @@ class EvdevWheelReader:
 
 def analog_state_event(
     *,
-    timestamp_s: float,
+    timestamp_us: int,
     steer: float,
     throttle: float,
     brake: float,
@@ -346,7 +331,7 @@ def analog_state_event(
     connected: bool = True,
     source: str = "gamepad",
 ) -> UserInputEvent:
-    """Build the raw event shared by native and browser analog devices."""
+    """Build the populated V2 event shared by native and browser devices."""
     command = DriverCommand(
         steer=steer,
         throttle=throttle,
@@ -356,11 +341,20 @@ def analog_state_event(
         reset=reset,
     )
     return UserInputEvent(
-        timestamp_s=timestamp_s,
-        event_type=GAMEPAD_STATE_EVENT,
-        payload={"connected": connected, **command.as_payload()},
-        source=source,
+        timestamp=uint64(timestamp_us),
+        event_data=AnalogDrivingEventData(
+            command=command,
+            connected=connected,
+            source=source,
+        ),
     )
+
+
+def _normalize_key(key: str) -> str:
+    if key == " ":
+        return "space"
+    value = key.strip().lower().replace("arrow", "")
+    return "space" if value == "spacebar" else value
 
 
 def normalize_axis(
@@ -424,14 +418,15 @@ def _integer_mapping(value: object) -> dict[str, int]:
 
 
 __all__ = [
-    "GAMEPAD_STATE_EVENT",
-    "GAME_DRIVER_COMMAND",
+    "AnalogDrivingEventData",
     "AnalogDriverCommandConverter",
     "AxisCalibration",
+    "DriverCommandEventData",
     "EvdevWheelReader",
     "KeyboardDriverCommandConverter",
     "WheelProfile",
     "analog_state_event",
-    "game_user_input_schema",
+    "driver_command_event",
+    "keyboard_key_event",
     "normalize_axis",
 ]

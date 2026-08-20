@@ -16,18 +16,25 @@
 """Crazy Robotaxi gameplay and runtime application."""
 
 from .app import (
-    CrazyRobotaxiApplication,
-    CrazyRobotaxiApplicationSession,
     CrazyRobotaxiSessionConfig,
+    CrazyRobotaxiStepResult,
+    CrazyRobotaxiV1ApplicationAdapter,
+    CrazyRobotaxiV1SessionAdapter,
+    CrazyRobotaxiV2Application,
+    CrazyRobotaxiV2Session,
     create_app,
+    create_v2_app,
 )
 from .game import CrazyRobotaxiGame, TaxiGameConfig, TaxiPhase, TaxiSessionState
 from .high_scores import HighScoreEntry, HighScoreStore
 
 __all__ = [
-    "CrazyRobotaxiApplication",
-    "CrazyRobotaxiApplicationSession",
+    "CrazyRobotaxiStepResult",
     "CrazyRobotaxiSessionConfig",
+    "CrazyRobotaxiV1ApplicationAdapter",
+    "CrazyRobotaxiV1SessionAdapter",
+    "CrazyRobotaxiV2Application",
+    "CrazyRobotaxiV2Session",
     "CrazyRobotaxiGame",
     "HighScoreEntry",
     "HighScoreStore",
@@ -35,4 +42,5 @@ __all__ = [
     "TaxiPhase",
     "TaxiSessionState",
     "create_app",
+    "create_v2_app",
 ]
