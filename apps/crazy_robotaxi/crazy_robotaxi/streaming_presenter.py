@@ -34,6 +34,7 @@ from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -819,7 +820,14 @@ class MJPEGStreamingPresenter:
                 )
             )
         elif view_mode == "model_rgb" and frame.model_rgb_host_uint8 is not None:
-            _prefetch_to_numpy(frame.model_rgb_host_uint8)
+            _prefetch_to_numpy(
+                select_presented_rgb(
+                    frame,
+                    view_mode,
+                    width=self._raster.width,
+                    height=self._raster.height,
+                )
+            )
         else:
             _prefetch_to_numpy(frame.rgb_host_uint8)
         if frame.bev_host_uint8 is not None:
@@ -851,7 +859,13 @@ class MJPEGStreamingPresenter:
             )
         elif view_mode == "model_rgb" and frame.model_rgb_host_uint8 is not None:
             image = _with_status_overlay(
-                frame.model_rgb_host_uint8, frame.status_message
+                select_presented_rgb(
+                    frame,
+                    view_mode,
+                    width=self._raster.width,
+                    height=self._raster.height,
+                ),
+                frame.status_message,
             )
         else:
             image = _with_status_overlay(frame.rgb_host_uint8, frame.status_message)
