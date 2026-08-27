@@ -184,11 +184,14 @@ model-generation-loop produces frames:
 Use `PresentationMode.ONLY_PRESENT_NEW` with `BackpressureMode.BLOCK` when every
 generated frame must be presented exactly once and in order.
 
-For widgets drawn over the model output, subclass `SlangPyUILoop` from
-`flashdreams.runtime_v2.slangpy_ui_loop` and implement
-`step_ui(ui, step_index, events)` rather than `step`. The
+For full immediate Dear ImGui controls drawn over model output, subclass
+`ImGuiUILoop` from `flashdreams.runtime_v2.imgui_ui_loop` and implement
+`step_ui(imgui, step_index, events)` rather than `step`. Its `imgui` proxy
+exposes `imgui_bundle.imgui` and an image-like pixel upload convenience form.
+For SlangPy's smaller retained widget API, subclass `SlangPyUILoop` from
+`flashdreams.runtime_v2.slangpy_ui_loop`. The
 [`slangpy_ui_demo` integration](../../../integrations_v2/slangpy_ui_demo/README.md)
-is the reference, including one example that uses model output inside the UI.
+remains the reference for that retained API.
 
 ## Where to go next
 
