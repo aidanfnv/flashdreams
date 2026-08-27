@@ -8,6 +8,7 @@ import threading
 
 import torch
 from torch import Tensor
+from torch.nn import functional as F
 
 from flashdreams.runtime_v2.session_desc import BackpressureMode
 from flashdreams.runtime_v2.step_result import StepResult
@@ -184,7 +185,8 @@ class PresentationManager:
 
         Args:
             bottom: ``[C, H, W]`` frame to draw onto, or ``None`` to start from
-                black.
+                black. A byte frame beneath a floating-point RGBA overlay is
+                moved and normalized to the overlay's device and dtype.
             top: ``[C, H, W]`` frame to draw. Four channels is RGBA and blends;
                 anything else replaces.
 
@@ -192,8 +194,8 @@ class PresentationManager:
             An RGB ``[3, H, W]`` frame.
 
         Raises:
-            ValueError: The frames disagree about size, device or dtype, or
-                either is not a presentable frame.
+            ValueError: The frames have an unsupported device or dtype mismatch,
+                or either is not a presentable frame.
         """
         return _composite_frame(bottom, top)
 
@@ -285,10 +287,22 @@ def _composite_frame(bottom: Tensor | None, top: Tensor) -> Tensor:
     if bottom is not None:
         _validate_frame(bottom)
         bottom = bottom[:3]
+        if (
+            bottom.dtype is torch.uint8
+            and top.shape[0] == 4
+            and top.is_floating_point()
+        ):
+            bottom = (
+                bottom.to(
+                    device=color.device,
+                    dtype=color.dtype,
+                    non_blocking=True,
+                )
+                .mul_(2.0 / 255.0)
+                .sub_(1.0)
+            )
         if bottom.shape[0] == 1:
             bottom = bottom.repeat(3, 1, 1)
-        if color.shape[1:] != bottom.shape[1:]:
-            raise ValueError("All composited frames must have the same dimensions.")
         if color.device != bottom.device or color.dtype != bottom.dtype:
             raise ValueError(
                 "All composited frames must have the same device and dtype."
@@ -300,6 +314,18 @@ def _composite_frame(bottom: Tensor | None, top: Tensor) -> Tensor:
     if bottom is None:
         fill_value = -1.0 if color.is_floating_point() else 0
         bottom = torch.full_like(color, fill_value)
+    elif color.shape[1:] != bottom.shape[1:]:
+        target_size = tuple(
+            bottom_size if top_size == 1 else top_size
+            for bottom_size, top_size in zip(bottom.shape[1:], color.shape[1:])
+        )
+        if bottom.shape[1:] != target_size:
+            bottom = F.interpolate(
+                bottom.unsqueeze(0),
+                size=target_size,
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(0)
     alpha = top[3:4].to(device=bottom.device, dtype=torch.float32)
     alpha = alpha.clamp(0.0, 1.0).to(bottom.dtype)
     return color * alpha + bottom * (1.0 - alpha)

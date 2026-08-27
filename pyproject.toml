@@ -10,9 +10,10 @@ members = [
     "integrations/*",
     "integrations_v2/*",
     "apps/*",
-    # Nested sub-packages that the ``integrations/*`` glob does not reach.
-    "integrations/omnidreams/ludus-renderer",
+    # Nested sub-packages that the integration globs do not reach.
+    "integrations_v2/omnidreams/impl/ludus-renderer",
 ]
+exclude = ["apps/__init__.py", "apps/README.md", "integrations_v2/README.md"]
 
 # Override nvidia-cublas to >=13.4 because transformer-engine-cu13 2.14.0 was
 # compiled against cuBLAS 13.4.x, while torch 2.11 pins nvidia-cublas 13.1.0.3.
@@ -49,8 +50,10 @@ ignore = ["flashdreams/flashdreams/accelerated/multi_head_attention/triton/**", 
 extraPaths = [
     "flashdreams",
     "apps",
-    "integrations/omnidreams",
-    "integrations/omnidreams/ludus-renderer",
+    "apps/clipgt2v",
+    "apps/interactive_drive",
+    "integrations_v2",
+    "integrations_v2/omnidreams/impl/ludus-renderer",
     "integrations/causal_forcing",
     "integrations/cosmos_predict2",
     "integrations/flashvsr",
@@ -84,8 +87,10 @@ python-version = "3.10"
 extra-paths = [
     "flashdreams",
     "apps",
-    "integrations/omnidreams",
-    "integrations/omnidreams/ludus-renderer",
+    "apps/clipgt2v",
+    "apps/interactive_drive",
+    "integrations_v2",
+    "integrations_v2/omnidreams/impl/ludus-renderer",
     "integrations/causal_forcing",
     "integrations/cosmos_predict2",
     "integrations/flashvsr",
@@ -111,14 +116,13 @@ extra-paths = [
 [tool.ty.src]
 # Auto-generated protobuf stubs trigger `conflicting-metaclass` errors due to
 # protobuf's EnumTypeWrapper pattern (known ty limitation).
-# The ``omnidreams.interactive_drive`` subpackage's flashdreams / slangpy /
+# The ``clipgt2v.interactive_drive`` subpackage's flashdreams / slangpy /
 # numpy interop surface has known-untyped areas; exclude both the
 # subpackage source and its tests so workspace ``ty`` stays clean.
 # (The pre-fold sample's pyright config had a similar exclude list.)
 exclude = [
     "**/protos/*pb2*",
-    "integrations/omnidreams/omnidreams/interactive_drive/**",
-    "integrations/omnidreams/tests/interactive_drive/**",
+    "apps/clipgt2v/clipgt2v/interactive_drive/**",
     # Bench / parity-debugging scaffolding for the hy_worldplay integration;
     # not shipped product, mirrors the interactive_drive precedent above.
     "integrations/hy_worldplay/tests/parity_check/**",

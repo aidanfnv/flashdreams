@@ -1,0 +1,27 @@
+[project]
+name = "flashdreams-interactive-drive-v2"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "flashdreams[local-window,serving]",
+    "flashdreams-clipgt2v-v2",
+    "huggingface-hub>=0.33",
+    "Pillow>=10.0",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+flashdreams = { workspace = true }
+flashdreams-clipgt2v-v2 = { workspace = true }
+
+[tool.setuptools.packages.find]
+include = ["interactive_drive*"]
+
+[tool.setuptools.package-data]
+interactive_drive = ["configs/*.yaml"]
+
+[tool.uv]
+managed = true

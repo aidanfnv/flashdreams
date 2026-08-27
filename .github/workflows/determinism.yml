@@ -79,4 +79,4 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           uv run --no-sync pytest -v -s \
-            integrations/omnidreams/tests/test_omnidreams_same_seed_reproducibility.py
+            integrations_v2/omnidreams/tests/test_omnidreams_same_seed_reproducibility.py

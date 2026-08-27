@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+# World-model manifest bundled with the Interactive Drive demo.
+#
+# Inference is handled by the packaged FlashDreams OmniDreams pipeline. The
+# application owns this copy so its default launch does not depend on another
+# application's source-tree layout.
+resolution_wh: [1280, 704]
+fps: 30
+num_frames_per_block: 8
+# Eager mode gives interactive startup a faster first chunk than compiling on
+# the first real inference call.
+compile_net: false
+light_vae: true
+encode_with_pixel_shuffle: false
+local_attn_size: 6
+skip_finalize_kv_cache: false
+sink_size: 0
+denoising_steps: [1000, 500]
+upsampling_enabled: false
+upsampling_scale: 4
+device: cuda:0
+seed_for_every_rollout:

@@ -573,6 +573,52 @@ def test_default_ui_composites_channels_and_holds_the_latest_frame() -> None:
     assert ui.step(2, UserInputEvents([])) is None
 
 
+def test_composite_allows_frames_with_different_dimensions() -> None:
+    manager = PresentationManager()
+    bottom = torch.full((3, 2, 3), -1.0)
+
+    opaque = torch.ones((3, 4, 5))
+    assert torch.equal(manager.composite(bottom, opaque), opaque)
+
+    translucent = torch.cat((torch.ones((3, 4, 5)), torch.full((1, 4, 5), 0.5)))
+    composited = manager.composite(bottom, translucent)
+    assert composited.shape == (3, 4, 5)
+    assert torch.equal(composited, torch.zeros_like(composited))
+
+
+def test_composite_broadcasts_singleton_overlay_dimensions() -> None:
+    manager = PresentationManager()
+    bottom = torch.full((3, 2, 3), -1.0)
+    tint = torch.tensor([1.0, 1.0, 1.0, 0.5]).reshape(4, 1, 1)
+
+    composited = manager.composite(bottom, tint)
+
+    assert composited.shape == bottom.shape
+    assert torch.equal(composited, torch.zeros_like(composited))
+
+
+def test_composite_normalizes_uint8_bottom_for_floating_rgba_overlay() -> None:
+    manager = PresentationManager()
+    bottom = torch.tensor([[[0, 255]], [[255, 0]], [[128, 128]]], dtype=torch.uint8)
+    transparent = torch.zeros((4, 1, 2), dtype=torch.float32)
+
+    composited = manager.composite(bottom, transparent)
+
+    expected = bottom.to(torch.float32).mul(2.0 / 255.0).sub(1.0)
+    assert composited.dtype is transparent.dtype
+    assert composited.device == transparent.device
+    assert torch.equal(composited, expected)
+
+
+def test_composite_rejects_unrelated_dtype_mismatch() -> None:
+    manager = PresentationManager()
+    bottom = torch.zeros((3, 1, 1), dtype=torch.float64)
+    overlay = torch.zeros((4, 1, 1), dtype=torch.float32)
+
+    with pytest.raises(ValueError, match="same device and dtype"):
+        manager.composite(bottom, overlay)
+
+
 def test_default_ui_presents_each_frame_from_a_model_chunk() -> None:
     log = CallLog()
 

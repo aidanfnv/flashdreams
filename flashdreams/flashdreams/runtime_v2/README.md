@@ -41,8 +41,9 @@ Presenting it:
 
 - `blit_model_output_to_screen_loop.py` is the UI loop a session gets when it
   registers none of its own.
-- `slangpy_ui_loop.py` and `slangpy_ui_renderer.py` are the UI loop for
-  applications that draw widgets over the model output.
+- `slangpy_ui_loop.py` and `slangpy_ui_renderer.py` provide retained SlangPy
+  widgets over the model output. `imgui_ui_loop.py` and `_imgui_ui_renderer.py`
+  provide immediate Dear ImGui controls rendered through SlangPy.
 - `mp4_client_window.py` and `webrtc_client_window.py` are the two windows.
 - `mp4_output_sink.py`, `metrics_output_sink.py`, `video_encoder.py` and
   `video_tensor.py` are what output is written through.

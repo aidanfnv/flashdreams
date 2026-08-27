@@ -10,7 +10,7 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - "flashdreams/pyproject.toml"
-      - "integrations/omnidreams/**"
+      - "integrations_v2/omnidreams/**"
       - "flashdreams/flashdreams/core/**"
       - "flashdreams/flashdreams/infra/**"
       - "flashdreams/flashdreams/recipes/taehv/**"
@@ -43,7 +43,7 @@ jobs:
       SCRATCH_ROOT: /tmp/omnidreams-worldlens-scratch
       SPLIT: od_26_01_canary3_tb4
       TOTAL_BLOCKS: "4"
-      BASELINE: integrations/omnidreams/eval_baselines/od-26.01-canary3-tb4-v1.json
+      BASELINE: integrations_v2/omnidreams/impl/eval_baselines/od-26.01-canary3-tb4-v1.json
       CANARY_UUID_REGEX: '"uuid": "(01d503d4-449b-46fc-8d78-9085e70d3554|02e075b9-fd24-426b-971b-7cfcb2074cc9|0499fb41-122d-4180-83af-f954a9974d3b)"'
     steps:
       - name: Detect GPU architecture
