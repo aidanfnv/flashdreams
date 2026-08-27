@@ -44,7 +44,7 @@ from flashdreams.infra.acceleration import (
     cuda_graph_capture_ar_index,
 )
 from flashdreams.infra.compile import compile_module
-from integrations.omnidreams.benchmarks.cases import (
+from integrations_v2.omnidreams.benchmarks.cases import (
     BENCHMARK_CASES,
     AttentionBenchmarkCase,
     skip_unsupported_device,

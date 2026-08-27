@@ -4,13 +4,11 @@
 """Renderer backends."""
 
 from clipgt2v.interactive_drive.backends.base import RenderBackend
-from clipgt2v.interactive_drive.backends.raster import RasterRenderBackend
 from clipgt2v.interactive_drive.backends.world_model import (
     WorldModelRenderBackend,
 )
 
 __all__ = [
     "RenderBackend",
-    "RasterRenderBackend",
     "WorldModelRenderBackend",
 ]

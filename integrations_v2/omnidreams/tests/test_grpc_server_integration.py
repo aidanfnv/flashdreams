@@ -158,7 +158,7 @@ def test_grpc_server_start_render_close_roundtrip(
     server_cmd = [
         sys.executable,
         "-m",
-        "integrations.omnidreams.omnidreams.impl.grpc.server",
+        "omnidreams.impl.grpc.server",
         "--host",
         "127.0.0.1",
         "--port",

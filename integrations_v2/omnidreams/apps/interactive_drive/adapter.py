@@ -17,7 +17,6 @@ from flashdreams.api_v2.application import IApplication
 OMNIDREAMS_INTERACTIVE_DRIVE_DEFAULTS = ClipGT2VApplicationDefaults(
     title="Interactive Drive",
     slug="interactive-drive",
-    backend="world_model",
     total_blocks=0,
     fps=30,
     width=1280,
@@ -27,7 +26,6 @@ OMNIDREAMS_INTERACTIVE_DRIVE_DEFAULTS = ClipGT2VApplicationDefaults(
 OMNIDREAMS_INTERACTIVE_DRIVE_PERF_DEFAULTS = ClipGT2VApplicationDefaults(
     title="Interactive Drive (Perf)",
     slug="interactive-drive-perf",
-    backend="world_model",
     total_blocks=0,
     fps=30,
     width=1168,

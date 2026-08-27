@@ -8,7 +8,7 @@ After kinematic integration produces ``(x, y, yaw)``, this module re-aligns
 USDZ as ``mesh_ground.ply``. Mirrors the alpasim physics service
 (:mod:`alpasim_physics.backend.PhysicsBackend.update_pose`) using a numpy-only
 CPU vertical raycaster so interactive_drive keeps a small dependency surface and
-works on the ``--backend raster`` (no GPU) path too.
+also works without GPU-specific geometry queries.
 """
 
 import logging

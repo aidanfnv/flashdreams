@@ -35,8 +35,8 @@ from flashdreams.accelerated.multi_head_attention.optimized import (
     QuantizationOption,
     SDPABackend,
 )
-from integrations.omnidreams.benchmarks.cases import BENCHMARK_CASES
-from integrations.omnidreams.benchmarks.test_modules import (
+from integrations_v2.omnidreams.benchmarks.cases import BENCHMARK_CASES
+from integrations_v2.omnidreams.benchmarks.test_modules import (
     _CUDNN_OPTIMIZED_IMPL_CONFIGS,
     _FA2_OPTIMIZED_IMPL_CONFIGS,
     _FULL_POLICY_SEARCH,

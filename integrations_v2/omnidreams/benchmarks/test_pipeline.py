@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 from flashdreams.infra.config import derive_config
 from flashdreams.infra.diffusion.scheduler.fm import FlowMatchSchedulerConfig
 from flashdreams.recipes.taehv import TeahvVAEDecoderConfig
-from integrations.omnidreams.benchmarks.cases import (
+from integrations_v2.omnidreams.benchmarks.cases import (
     BENCHMARK_CASES,
     AttentionBenchmarkCase,
     skip_unsupported_device,

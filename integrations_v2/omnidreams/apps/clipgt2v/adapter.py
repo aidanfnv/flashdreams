@@ -16,7 +16,6 @@ from flashdreams.api_v2.application import IApplication
 OMNIDREAMS_APPLICATION_DEFAULTS = ClipGT2VApplicationDefaults(
     title="OmniDreams",
     slug="clipgt2v",
-    backend="world_model",
     total_blocks=60,
     fps=30,
     width=1280,
@@ -26,7 +25,6 @@ OMNIDREAMS_APPLICATION_DEFAULTS = ClipGT2VApplicationDefaults(
 OMNIDREAMS_PERF_APPLICATION_DEFAULTS = ClipGT2VApplicationDefaults(
     title="OmniDreams (Perf)",
     slug="clipgt2v-perf",
-    backend="world_model",
     total_blocks=60,
     fps=30,
     width=1168,

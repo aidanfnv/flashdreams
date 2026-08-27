@@ -18,7 +18,6 @@ import torch
 from torch import Tensor
 
 from clipgt2v.interactive_drive.backends.base import RenderBackend
-from clipgt2v.interactive_drive.backends.raster import RasterRenderBackend
 from clipgt2v.interactive_drive.backends.world_model import (
     WorldModelRenderBackend,
 )
@@ -82,9 +81,6 @@ class ClipGT2VApplicationDefaults:
 
     slug: str = "scene-drive"
     """Application slug shown in parser diagnostics."""
-
-    backend: Literal["raster", "world_model"] = "raster"
-    """Backend selected when ``--backend`` is omitted."""
 
     total_blocks: int = 60
     """Default number of generated blocks."""
@@ -571,7 +567,6 @@ class ClipGT2VApplication(IApplication):
         defaults = defaults or ClipGT2VApplicationDefaults()
         self._title = defaults.title
         self._slug = defaults.slug
-        self._default_backend = defaults.backend
         self._default_blocks = defaults.total_blocks
         self._default_fps = defaults.fps
         self._default_width = defaults.width
@@ -599,11 +594,6 @@ class ClipGT2VApplication(IApplication):
                 "Local USDZ scene. If omitted, download the built-in default "
                 "scene from Hugging Face."
             ),
-        )
-        parser.add_argument(
-            "--backend",
-            choices=("raster", "world_model"),
-            default=self._default_backend,
         )
         parser.add_argument("--prompt")
         parser.add_argument("--camera", default="camera_front_wide_120fov")
@@ -657,7 +647,6 @@ class ClipGT2VApplication(IApplication):
         raster = RasterConfig(width=args.width, height=args.height)
         app_config = AppConfig(
             scene_path=scene,
-            backend=args.backend,
             game_mode=args.game_mode,
             camera_name=args.camera,
             variant=args.variant,
@@ -716,13 +705,6 @@ def _build_backend(
     *,
     pipeline_config: StreamInferencePipelineConfig | None,
 ) -> RenderBackend:
-    if config.backend == "raster":
-        return RasterRenderBackend(
-            config.chunk,
-            config.raster,
-            bev=config.bev,
-            vehicle=config.vehicle,
-        )
     if pipeline_config is None:
         raise ValueError(
             "The application defaults must provide pipeline_config for model rendering."

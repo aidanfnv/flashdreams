@@ -9,7 +9,6 @@ from typing import Literal
 
 from flashdreams.infra.postprocess import VideoPostprocessChainConfig
 
-BackendName = Literal["raster", "world_model"]
 ViewMode = Literal["rgb", "model_rgb", "physx"]
 ComputeDeviceName = Literal["automatic", "cuda", "vulkan"]
 
@@ -124,7 +123,6 @@ class BevConfig:
 @dataclass(frozen=True)
 class AppConfig:
     scene_path: Path
-    backend: BackendName = "raster"
     game_mode: bool = False
     camera_name: str = "camera_front_wide_120fov"
     variant: str = "default"

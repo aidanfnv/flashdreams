@@ -214,7 +214,7 @@ def test_clipgt2v_no_ui_registers_only_the_model_loop(tmp_path: Path) -> None:
     scene = tmp_path / "local.usdz"
     scene.touch()
     app = ClipGT2VApplication()
-    app.init(["--scene", str(scene), "--backend", "raster", "--no-ui"])
+    app.init(["--scene", str(scene), "--no-ui"])
 
     session = app.create_session(app.session_desc())
     session.init()
@@ -241,7 +241,7 @@ def test_interactive_drive_resolves_default_scene_when_omitted(
         resolve_default_scene,
     )
     app = InteractiveDriveApplication()
-    app.init(["--backend", "raster", "--total-blocks", "0"])
+    app.init(["--total-blocks", "0"])
 
     assert calls == [None]
     assert app._config is not None
@@ -253,7 +253,7 @@ def test_interactive_drive_exposes_game_mode(tmp_path: Path) -> None:
     scene.touch()
     app = InteractiveDriveApplication()
 
-    app.init(["--scene", str(scene), "--backend", "raster", "--game-mode"])
+    app.init(["--scene", str(scene), "--game-mode"])
 
     assert app._config is not None
     assert app._config.app.game_mode is True
@@ -275,7 +275,6 @@ def test_world_model_accepts_postprocess_preset(
     )
     app = InteractiveDriveApplication(
         defaults=ClipGT2VApplicationDefaults(
-            backend="world_model",
             pipeline_config=cast(Any, object()),
         ),
     )
@@ -331,7 +330,7 @@ def test_standalone_application_downloads_default_scene(
     )
     app = InteractiveDriveApplication()
 
-    app.init(["--backend", "raster", "--total-blocks", "0"])
+    app.init(["--total-blocks", "0"])
 
     assert calls == [None]
     assert app._config is not None
@@ -354,7 +353,7 @@ def test_interactive_drive_prefers_explicit_scene(
         unexpected_default_scene,
     )
     app = InteractiveDriveApplication()
-    app.init(["--scene", str(scene), "--backend", "raster"])
+    app.init(["--scene", str(scene)])
 
     assert app._config is not None
     assert app._config.app.scene_path == scene
@@ -366,7 +365,7 @@ def test_interactive_drive_owns_a_separate_session_and_ui_loop(
     scene = tmp_path / "local.usdz"
     scene.touch()
     app = InteractiveDriveApplication()
-    app.init(["--scene", str(scene), "--backend", "raster"])
+    app.init(["--scene", str(scene)])
 
     session = app.create_session(app.session_desc())
     assert isinstance(session, InteractiveDriveSession)
@@ -384,7 +383,7 @@ def test_interactive_drive_hud_draws_imgui_controls_and_images(
     scene = tmp_path / "local.usdz"
     scene.touch()
     app = InteractiveDriveApplication()
-    app.init(["--scene", str(scene), "--backend", "raster"])
+    app.init(["--scene", str(scene)])
     session = app.create_session(app.session_desc())
     session.init()
     loop = session.ui_loop
@@ -441,7 +440,7 @@ def test_interactive_drive_view_button_cycles_all_three_views(
     scene = tmp_path / "local.usdz"
     scene.touch()
     app = InteractiveDriveApplication()
-    app.init(["--scene", str(scene), "--backend", "raster"])
+    app.init(["--scene", str(scene)])
     session = app.create_session(app.session_desc())
     session.init()
     loop = session.ui_loop
@@ -518,7 +517,7 @@ def test_interactive_drive_discovers_scenes_and_weather_variants(
         scene.touch()
     app = InteractiveDriveApplication()
 
-    app.init(["--scene", str(rain), "--backend", "raster"])
+    app.init(["--scene", str(rain)])
 
     assert len(app._interactive_scene_options) == 2
     selected = next(

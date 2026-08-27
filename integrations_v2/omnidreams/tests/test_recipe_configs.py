@@ -47,9 +47,7 @@ def test_pipeline_configs_are_keyed_by_name() -> None:
 
 def test_application_defaults_are_owned_by_each_adapter() -> None:
     """Keep demo-specific configuration beside each application factory."""
-    assert OMNIDREAMS_APPLICATION_DEFAULTS.backend == "world_model"
     assert OMNIDREAMS_APPLICATION_DEFAULTS.slug == "clipgt2v"
-    assert OMNIDREAMS_PERF_APPLICATION_DEFAULTS.backend == "world_model"
     assert OMNIDREAMS_PERF_APPLICATION_DEFAULTS.slug == "clipgt2v-perf"
     assert OMNIDREAMS_APPLICATION_DEFAULTS.width == 1280
     assert OMNIDREAMS_PERF_APPLICATION_DEFAULTS.width == 1168

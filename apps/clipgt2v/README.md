@@ -26,7 +26,6 @@ optional and follow the `--` separator:
 | Argument | Description |
 | --- | --- |
 | `--scene PATH` | Use a local USDZ scene instead of downloading the default scene. |
-| `--backend {raster,world_model}` | Render HD-map conditioning directly or run the world model. Default: `world_model`. |
 | `--prompt TEXT` | Override the prompt stored in the selected scene variant. |
 | `--camera NAME` | Select a camera from the scene. Default: `camera_front_wide_120fov`. |
 | `--variant NAME` | Select the scene's initial-frame and prompt variant. Default: `default`. |
@@ -48,7 +47,7 @@ session is stopped:
 
 ```bash
 uv run flashdreams-run-v2 clipgt2v-omnidreams --mode webrtc -- \
-    --scene scene.usdz --backend raster --view hdmap --game-mode --no-ui \
+    --scene scene.usdz --view hdmap --game-mode --no-ui \
     --total-blocks 0
 ```
 

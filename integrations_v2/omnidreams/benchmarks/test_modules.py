@@ -45,7 +45,7 @@ from flashdreams.accelerated.multi_head_attention.optimized import (
     SDPABackend,
 )
 from flashdreams.core.attention.rope import RotaryPositionEmbedding3D
-from integrations.omnidreams.benchmarks.cases import (
+from integrations_v2.omnidreams.benchmarks.cases import (
     BENCHMARK_CASES,
     AttentionBenchmarkCase,
     skip_unsupported_device,
