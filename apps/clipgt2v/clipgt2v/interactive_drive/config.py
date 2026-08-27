@@ -129,12 +129,15 @@ class AppConfig:
     camera_name: str = "camera_front_wide_120fov"
     variant: str = "default"
     prompt_override: str | None = None
-    manifest_path: Path | None = None
     chunk: ChunkConfig = ChunkConfig()
     raster: RasterConfig = RasterConfig()
     vehicle: VehicleConfig = VehicleConfig()
     world_model_profile: WorldModelProfileConfig = WorldModelProfileConfig()
     world_model_offload_text_encoder: bool = False
+    world_model_device: str = "cuda:0"
+    world_model_seed: int | None = None
+    world_model_synthetic: bool = False
+    world_model_debug_condition_frame_dir: Path | None = None
     postprocess: VideoPostprocessChainConfig = field(
         default_factory=VideoPostprocessChainConfig
     )

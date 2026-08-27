@@ -14,22 +14,6 @@ from typing import Any, Literal
 
 import numpy as np
 import torch
-from flashdreams.api_v2.application import IApplication
-from flashdreams.api_v2.loop import IModelLoop, IUILoop, invoke_async
-from flashdreams.api_v2.session import ISession
-from flashdreams.infra.postprocess import VideoPostprocessChainConfig
-from flashdreams.plugins.registry import discover_postprocess_presets
-from flashdreams.runtime_v2.session_desc import SessionDesc
-from flashdreams.runtime_v2.slangpy_ui_loop import SlangPyUILoop
-from flashdreams.runtime_v2.step_result import StepResult
-from flashdreams.runtime_v2.user_input_event import (
-    GamepadUserInputEvent,
-    GameWheelUserInputEvent,
-    KeyboardInputState,
-    KeyboardUserInputEvent,
-)
-from flashdreams.runtime_v2.user_input_events import UserInputEvents
-from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 from torch import Tensor
 
 from clipgt2v.interactive_drive.backends.base import RenderBackend
@@ -40,6 +24,7 @@ from clipgt2v.interactive_drive.config import (
     ChunkConfig,
     RasterConfig,
     VehicleConfig,
+    WorldModelProfileConfig,
 )
 from clipgt2v.interactive_drive.input.keyboard import command_from_snapshot
 from clipgt2v.interactive_drive.scene_loader import load_scene_bundle
@@ -56,12 +41,26 @@ from clipgt2v.interactive_drive.types import (
     SceneBundle,
     VehicleState,
 )
+from flashdreams.api_v2.application import IApplication
+from flashdreams.api_v2.loop import IModelLoop, IUILoop, invoke_async
+from flashdreams.api_v2.session import ISession
+from flashdreams.infra.postprocess import VideoPostprocessChainConfig
+from flashdreams.plugins.registry import discover_postprocess_presets
+from flashdreams.runtime_v2.session_desc import SessionDesc
+from flashdreams.runtime_v2.slangpy_ui_loop import SlangPyUILoop
+from flashdreams.runtime_v2.step_result import StepResult
+from flashdreams.runtime_v2.user_input_event import (
+    GamepadUserInputEvent,
+    GameWheelUserInputEvent,
+    KeyboardInputState,
+    KeyboardUserInputEvent,
+)
+from flashdreams.runtime_v2.user_input_events import UserInputEvents
+from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
 BackendFactory = Callable[[AppConfig], RenderBackend]
 SceneLoader = Callable[..., SceneBundle]
 SceneResolver = Callable[[], Path]
-ManifestLoader = Callable[[Path], Any]
-ManifestResolver = Callable[[str | Path], Path]
 ViewMode = Literal["rgb", "hdmap", "physx"]
 
 _VIEW_MODES: tuple[ViewMode, ...] = ("rgb", "hdmap", "physx")
@@ -84,6 +83,10 @@ class ClipGT2VApplicationDefaults:
     total_blocks: int = 60
     """Default number of generated blocks."""
 
+    fps: int = 30
+    width: int = 1280
+    height: int = 704
+
 
 @dataclass(frozen=True, slots=True)
 class ClipGT2VApplicationHooks:
@@ -91,12 +94,6 @@ class ClipGT2VApplicationHooks:
 
     backend_factory: BackendFactory
     """Create the selected render backend on the model thread."""
-
-    manifest_loader: ManifestLoader | None = None
-    """Load model-backend metadata; ``None`` disables model manifests."""
-
-    manifest_resolver: ManifestResolver | None = None
-    """Resolve model manifest names to local paths."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -579,6 +576,9 @@ class ClipGT2VApplication(IApplication):
         self._slug = defaults.slug
         self._default_backend = defaults.backend
         self._default_blocks = defaults.total_blocks
+        self._default_fps = defaults.fps
+        self._default_width = defaults.width
+        self._default_height = defaults.height
         self._hooks = hooks
         self._backend_factory = backend_factory or hooks.backend_factory
         self._scene_loader = scene_loader
@@ -610,14 +610,13 @@ class ClipGT2VApplication(IApplication):
             choices=("raster", "world_model"),
             default=self._default_backend,
         )
-        parser.add_argument("--manifest", type=Path)
         parser.add_argument("--prompt")
         parser.add_argument("--camera", default="camera_front_wide_120fov")
         parser.add_argument("--variant", default="default")
         parser.add_argument("--total-blocks", type=int, default=self._default_blocks)
-        parser.add_argument("--fps", type=int, default=30)
-        parser.add_argument("--width", type=int, default=1280)
-        parser.add_argument("--height", type=int, default=704)
+        parser.add_argument("--fps", type=int, default=self._default_fps)
+        parser.add_argument("--width", type=int, default=self._default_width)
+        parser.add_argument("--height", type=int, default=self._default_height)
         parser.add_argument("--view", choices=_VIEW_MODES, default="rgb")
         parser.add_argument(
             "--no-ui",
@@ -638,6 +637,23 @@ class ClipGT2VApplication(IApplication):
                 "A configured preset starts enabled and can be toggled in the HUD."
             ),
         )
+        parser.add_argument(
+            "--world-model-profile",
+            action="store_true",
+            help="Enable synchronized world-model profiling.",
+        )
+        parser.add_argument(
+            "--world-model-offload-text-encoder",
+            action="store_true",
+            help="Release text/image encoders after preparing scene conditioning.",
+        )
+        parser.add_argument("--world-model-device", default="cuda:0")
+        parser.add_argument("--world-model-seed", type=int)
+        parser.add_argument("--world-model-synthetic", action="store_true")
+        parser.add_argument(
+            "--world-model-debug-condition-frame-dir",
+            type=Path,
+        )
         args = parser.parse_args(list(commandline_args))
         scene = args.scene
         if scene is None:
@@ -649,15 +665,6 @@ class ClipGT2VApplication(IApplication):
             raise ValueError("--total-blocks must be >= 0 (0 means unbounded).")
         if args.fps <= 0 or args.width <= 0 or args.height <= 0:
             raise ValueError("--fps, --width, and --height must be > 0.")
-        manifest = args.manifest
-        if args.backend == "world_model" and manifest is None:
-            if self._hooks.manifest_resolver is None:
-                raise ValueError(
-                    "The selected model backend does not provide a manifest resolver."
-                )
-            manifest = self._hooks.manifest_resolver("example_world_model.yaml")
-        if manifest is not None and not manifest.is_file():
-            raise FileNotFoundError(manifest)
         chunk = ChunkConfig(fps=args.fps)
         raster = RasterConfig(width=args.width, height=args.height)
         app_config = AppConfig(
@@ -667,35 +674,24 @@ class ClipGT2VApplication(IApplication):
             camera_name=args.camera,
             variant=args.variant,
             prompt_override=args.prompt,
-            manifest_path=manifest,
             chunk=chunk,
             raster=raster,
+            world_model_profile=WorldModelProfileConfig(
+                enabled=args.world_model_profile
+            ),
+            world_model_offload_text_encoder=(args.world_model_offload_text_encoder),
+            world_model_device=args.world_model_device,
+            world_model_seed=args.world_model_seed,
+            world_model_synthetic=args.world_model_synthetic,
+            world_model_debug_condition_frame_dir=(
+                args.world_model_debug_condition_frame_dir
+            ),
             postprocess=VideoPostprocessChainConfig(
                 preset=args.postprocess_preset,
             ),
             bev=BevConfig(enabled=False),
             vehicle=VehicleConfig(),
         )
-        if args.backend == "world_model":
-            if self._hooks.manifest_loader is None:
-                raise ValueError(
-                    "The selected model backend does not provide a manifest loader."
-                )
-            assert manifest is not None
-            manifest_config = self._hooks.manifest_loader(manifest)
-            app_config = replace(
-                app_config,
-                chunk=replace(
-                    chunk,
-                    fps=manifest_config.fps,
-                    chunk_frames=manifest_config.num_frames_per_block,
-                ),
-                raster=replace(
-                    raster,
-                    width=manifest_config.resolution_wh[0],
-                    height=manifest_config.resolution_wh[1],
-                ),
-            )
         self._config = ClipGT2VConfig(
             app=app_config,
             total_blocks=args.total_blocks,
@@ -818,8 +814,6 @@ __all__ = [
     "ClipGT2VModelState",
     "ClipGT2VUILoop",
     "DriveTelemetry",
-    "ManifestLoader",
-    "ManifestResolver",
     "SceneLoader",
     "SceneResolver",
     "ViewMode",

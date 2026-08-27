@@ -17,22 +17,66 @@
 
 from __future__ import annotations
 
+from clipgt2v import ClipGT2VApplicationDefaults
 from interactive_drive import InteractiveDriveApplication
+from omnidreams.config import (
+    OMNIDREAMS_PERF_PIPELINE_CONFIG,
+    OMNIDREAMS_PIPELINE_CONFIG,
+)
+from omnidreams.impl.pipeline import OmnidreamsPipelineConfig
 
 from flashdreams.api_v2.application import IApplication
 
-from ...config import (
-    OMNIDREAMS_APPLICATION_HOOKS,
+from .hooks import (
+    create_omnidreams_application_hooks,
     resolve_default_interactive_drive_scene,
 )
 
+OMNIDREAMS_INTERACTIVE_DRIVE_DEFAULTS = ClipGT2VApplicationDefaults(
+    title="Interactive Drive",
+    slug="interactive-drive",
+    backend="world_model",
+    total_blocks=0,
+    fps=30,
+    width=1280,
+    height=704,
+)
+OMNIDREAMS_INTERACTIVE_DRIVE_PERF_DEFAULTS = ClipGT2VApplicationDefaults(
+    title="Interactive Drive (Perf)",
+    slug="interactive-drive-perf",
+    backend="world_model",
+    total_blocks=0,
+    fps=30,
+    width=1168,
+    height=640,
+)
 
-def create_app() -> IApplication:
-    """Create the OmniDreams interactive-drive application."""
+
+def _create_app(
+    defaults: ClipGT2VApplicationDefaults,
+    pipeline_config: OmnidreamsPipelineConfig,
+) -> IApplication:
     return InteractiveDriveApplication(
-        hooks=OMNIDREAMS_APPLICATION_HOOKS,
+        defaults=defaults,
+        hooks=create_omnidreams_application_hooks(pipeline_config),
         default_scene_resolver=resolve_default_interactive_drive_scene,
     )
 
 
-__all__ = ["create_app"]
+def create_app() -> IApplication:
+    """Create Interactive Drive with the regular OmniDreams config."""
+    return _create_app(
+        OMNIDREAMS_INTERACTIVE_DRIVE_DEFAULTS,
+        OMNIDREAMS_PIPELINE_CONFIG,
+    )
+
+
+def create_perf_app() -> IApplication:
+    """Create Interactive Drive with the performance OmniDreams config."""
+    return _create_app(
+        OMNIDREAMS_INTERACTIVE_DRIVE_PERF_DEFAULTS,
+        OMNIDREAMS_PERF_PIPELINE_CONFIG,
+    )
+
+
+__all__ = ["create_app", "create_perf_app"]

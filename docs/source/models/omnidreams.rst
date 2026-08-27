@@ -219,7 +219,7 @@ physics without the full-screen collision effect.
    before the view becomes interactive. The on-screen indicator shows
    ``Loading world model...`` during warmup and then ``Optimizing world
    model...`` while the first generated chunk is autotuned; this phase is
-   longest on the perf manifest. Subsequent launches are much faster because
+   longest on the perf configuration. Subsequent launches are much faster because
    the compiled kernels and CUDA graphs are cached and reused.
 
 .. note::
@@ -311,10 +311,10 @@ write access to ``/dev/input/*`` (add your user to the ``input`` group):
        <https://github.com/berarma/new-lg4ff>`__ (G29, G27, G923 PS); the G920
        and Xbox/PC G923 use the HID++ driver (kernel 6.3+).
 
-Native acceleration (perf manifest)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Native acceleration (perf configuration)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The bundled ``example_world_model_perf.yaml`` manifest runs the DiT and
+The registered ``clipgt2v-omnidreams-perf`` configuration runs the DiT and
 LightVAE through the OmniDreams single-view CUDA extension
 (``native_dit_acceleration: required``), which is faster than the default
 PyTorch path. The extension builds against pinned checkouts of CUTLASS,
@@ -327,19 +327,18 @@ repo. ``omnidreams-prepare --perf`` clones them at their pinned commits into
    uv run --package flashdreams-omnidreams omnidreams-prepare --perf
 
 This step only syncs sources; the extension itself compiles on the first
-launch that uses the manifest (one-time, a few minutes). It requires a
+launch that uses the perf configuration (one-time, a few minutes). It requires a
 Blackwell-class GPU (SM 12.0) or newer, a source checkout (the
 ``omnidreams_singleview`` sources ship only in the git tree, not the wheel),
 ``git``, and a CUDA toolchain (``nvcc``) matching your PyTorch build. Then
-point the demo at the perf manifest:
+launch the perf application:
 
 .. code-block:: bash
 
-   uv run --package flashdreams-omnidreams flashdreams-run \
-       omnidreams-perf local-window \
-       --manifest configs/launch_manifest/omnidreams_local_window.yaml
+   uv run --package flashdreams-omnidreams flashdreams-run-v2 \
+       clipgt2v-omnidreams-perf --mode local-window
 
-``native_dit_acceleration: required`` makes the manifest fail loudly if the
+``native_dit_acceleration="required"`` makes the perf config fail loudly if the
 extension can't build or load, rather than silently falling back to PyTorch.
 
 WebRTC server

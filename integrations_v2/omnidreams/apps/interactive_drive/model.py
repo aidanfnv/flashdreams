@@ -5,15 +5,16 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import torch
-from loguru import logger
 from clipgt2v.interactive_drive.config import WorldModelProfileConfig
-from omnidreams.apps.interactive_drive.manifest import WorldModelManifest
+from loguru import logger
+from omnidreams.impl.pipeline import OmnidreamsPipelineConfig
 from omnidreams.impl.synthetic_fixture import (
     build_synthetic_world_model_assets,
     default_synthetic_asset_dir,
@@ -34,56 +35,138 @@ from flashdreams.infra.postprocess import (
 )
 from flashdreams.infra.video_output import VideoOutputStream
 
-PipelineFactory = Callable[[WorldModelManifest, WorldModelProfileConfig], Any]
+
+@dataclass(frozen=True, slots=True)
+class OmnidreamsWorldModelRuntime:
+    """CLI runtime values paired with one model-owned pipeline config."""
+
+    pipeline_config: OmnidreamsPipelineConfig
+    resolution_wh: tuple[int, int]
+    fps: int
+    num_frames_per_block: int
+    device: str = "cuda:0"
+    seed_for_every_rollout: int | None = None
+    synthetic_model: bool = False
+    debug_condition_frame_dir: Path | None = None
+
+    @property
+    def transformer(self) -> Any:
+        """Return the OmniDreams-specific transformer configuration."""
+        return self.pipeline_config.diffusion_model.transformer
+
+    @property
+    def compile_net(self) -> bool:
+        return bool(self.transformer.compile_network)
+
+    @property
+    def compile_encoders(self) -> bool:
+        encoder = self.pipeline_config.encoder
+        image_encoder = self.pipeline_config.image_encoder
+        return bool(
+            getattr(encoder, "use_compile", False)
+            and getattr(image_encoder, "use_compile", False)
+        )
+
+    @property
+    def compile_decoder(self) -> bool:
+        return bool(getattr(self.pipeline_config.decoder, "use_compile", False))
+
+    @property
+    def light_vae(self) -> bool:
+        return True
+
+    @property
+    def encode_with_pixel_shuffle(self) -> bool:
+        return False
+
+    @property
+    def local_attn_size(self) -> int:
+        return int(self.transformer.window_size_t)
+
+    @property
+    def skip_finalize_kv_cache(self) -> bool:
+        return bool(self.transformer.skip_finalize_kv_cache)
+
+    @property
+    def sink_size(self) -> int:
+        return int(self.transformer.sink_size_t)
+
+    @property
+    def denoising_steps(self) -> list[int]:
+        scheduler = self.pipeline_config.diffusion_model.scheduler
+        return list(getattr(scheduler, "denoising_timesteps", ()))
+
+    @property
+    def upsampling_enabled(self) -> bool:
+        return False
+
+    @property
+    def native_dit_acceleration(self) -> str:
+        return self.transformer.native_dit_acceleration
+
+    @property
+    def native_dit_build_root(self) -> str | None:
+        return self.transformer.native_dit_build_root
+
+    @property
+    def native_dit_max_jobs(self) -> int | str | None:
+        return self.transformer.native_dit_max_jobs
+
+    @property
+    def native_dit_verbose_build(self) -> bool:
+        return bool(self.transformer.native_dit_verbose_build)
+
+    @property
+    def native_dit_backend(self) -> str:
+        return self.transformer.native_dit_backend
+
+    @property
+    def native_dit_attention_backend(self) -> str:
+        return self.transformer.native_dit_attention_backend
+
+    @property
+    def native_dit_sparge_topk(self) -> float | None:
+        return self.transformer.native_dit_sparge_topk
+
+    @property
+    def native_dit_sparge_hybrid_period(self) -> int | None:
+        return self.transformer.native_dit_sparge_hybrid_period
+
+    @property
+    def native_dit_sparge_hybrid_phase(self) -> int | None:
+        return self.transformer.native_dit_sparge_hybrid_phase
+
+    @property
+    def native_vae_encoder(self) -> str:
+        return str(
+            getattr(self.pipeline_config.encoder, "native_vae_acceleration", "disabled")
+        ).replace("required", "fp8")
+
+    @property
+    def native_vae_fp8_state_path(self) -> str | Path | None:
+        return getattr(
+            self.pipeline_config.encoder,
+            "native_vae_fp8_state_path",
+            None,
+        )
+
+
+PipelineFactory = Callable[[OmnidreamsWorldModelRuntime, WorldModelProfileConfig], Any]
 _VIEW_NAMES = ["camera_front_wide_120fov"]
-_LIGHTVAE_RECIPE = "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae"
-_LIGHTVAE_PERF_RECIPE = "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf"
-_LIGHTVAE_NATIVE_PERF_RECIPE = (
-    "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-native-perf"
-)
+_OMNIDREAMS_RECIPE = "omnidreams"
+_OMNIDREAMS_PERF_RECIPE = "omnidreams-perf"
 
 
-def _select_config_name(manifest: WorldModelManifest) -> str:
-    """Map interactive-drive's single-view manifest knobs to a flashdreams recipe slug.
+def _select_config_name(runtime: OmnidreamsWorldModelRuntime) -> str:
+    """Return the model-owned pipeline config selected by the app slug.
 
     Returns a key from ``omnidreams.config.OMNIDREAMS_CONFIGS``
     (i.e. the same slug ``flashdreams-run`` accepts as its first positional arg).
     """
-    if manifest.upsampling_enabled:
-        raise NotImplementedError(
-            "flashdreams interactive-drive path does not support upsampling."
-        )
-    if manifest.sink_size != 0:
-        raise NotImplementedError(
-            "flashdreams interactive-drive path currently supports sink_size=0 only."
-        )
-
-    if manifest.encode_with_pixel_shuffle:
-        if manifest.num_frames_per_block != 16:
-            raise ValueError(
-                "Single-view pixel-shuffle flashdreams checkpoints require 16-frame chunks."
-            )
-        if manifest.local_attn_size != 8:
-            raise ValueError(
-                "Single-view pixel-shuffle flashdreams checkpoints require local_attn_size=8."
-            )
-        return "omnidreams-sv-2steps-chunk4-loc8-pshuffle-lighttae"
-
-    if manifest.local_attn_size != 6:
-        raise ValueError(
-            "Single-view VAE flashdreams checkpoints require local_attn_size=6."
-        )
-    if manifest.light_vae:
-        if manifest.num_frames_per_block != 8:
-            raise ValueError(
-                "The light-VAE flashdreams recipe currently supports 8-frame chunks."
-            )
-        return _LIGHTVAE_RECIPE
-    if manifest.num_frames_per_block == 8:
-        return "omnidreams-sv-2steps-chunk2-loc6-vae-vae"
-    if manifest.num_frames_per_block == 12:
-        return "omnidreams-sv-2steps-chunk3-loc6-vae-vae"
-    raise ValueError("Full-VAE flashdreams recipes support 8- or 12-frame chunks.")
+    config_name = runtime.pipeline_config.name
+    if config_name not in {_OMNIDREAMS_RECIPE, _OMNIDREAMS_PERF_RECIPE}:
+        raise ValueError(f"Unsupported OmniDreams pipeline config {config_name!r}.")
+    return config_name
 
 
 def _pipeline_config_log_line(
@@ -122,11 +205,9 @@ def _pipeline_config_log_line(
 
 
 def _build_pipeline_config(
-    manifest: WorldModelManifest, profile: WorldModelProfileConfig
+    runtime: OmnidreamsWorldModelRuntime, profile: WorldModelProfileConfig
 ) -> Any:
     try:
-        from omnidreams.config import OMNIDREAMS_CONFIGS
-
         from flashdreams.infra.config import derive_config
         from flashdreams.infra.diffusion.scheduler.fm import FlowMatchSchedulerConfig
     except ModuleNotFoundError as exc:
@@ -138,55 +219,62 @@ def _build_pipeline_config(
             "`import flashdreams` and `import omnidreams` succeed."
         ) from exc
 
-    config_name = _select_config_name(manifest)
+    config_name = _select_config_name(runtime)
     seed = (
         42
-        if manifest.seed_for_every_rollout is None
-        else int(manifest.seed_for_every_rollout)
+        if runtime.seed_for_every_rollout is None
+        else int(runtime.seed_for_every_rollout)
     )
 
-    # Select the requested encoder startup policy without mutating the shared
-    # ``OMNIDREAMS_CONFIGS`` instances.
-    transformer_overrides = _transformer_overrides(manifest)
-    base_config_name = _base_config_name(config_name, manifest)
-    base = OMNIDREAMS_CONFIGS[base_config_name]
+    transformer_overrides = _transformer_overrides(runtime)
+    base_config_name = config_name
+    base = runtime.pipeline_config
     config = derive_config(
         base,
         enable_sync_and_profile=bool(profile.enabled),
-        **_native_vae_overrides(manifest),
+        **_native_vae_overrides(runtime),
         diffusion_model=dict(
             seed=seed,
             transformer=transformer_overrides,
         ),
     )
-    if not manifest.compile_decoder:
+    config = derive_config(
+        config,
+        image_encoder=dict(
+            use_compile=runtime.compile_encoders,
+            use_cuda_graph=runtime.compile_encoders,
+        ),
+        encoder=dict(
+            use_compile=runtime.compile_encoders,
+            use_cuda_graph=runtime.compile_encoders,
+        ),
+    )
+    if not runtime.compile_decoder:
         config = derive_config(config, decoder=dict(use_compile=False))
-    scheduler_uses_manifest_steps = False
+    scheduler_uses_config_steps = False
 
-    if not scheduler_uses_manifest_steps and hasattr(
-        config.diffusion_model, "scheduler"
-    ):
+    if not scheduler_uses_config_steps and hasattr(config.diffusion_model, "scheduler"):
         scheduler = config.diffusion_model.scheduler
         if isinstance(scheduler, FlowMatchSchedulerConfig):
             config = derive_config(
                 config,
                 diffusion_model=dict(
                     scheduler=dict(
-                        denoising_timesteps=list(manifest.denoising_steps),
-                        num_inference_steps=len(manifest.denoising_steps),
+                        denoising_timesteps=list(runtime.denoising_steps),
+                        num_inference_steps=len(runtime.denoising_steps),
                     ),
                 ),
             )
-            scheduler_uses_manifest_steps = True
-    if not scheduler_uses_manifest_steps and manifest.denoising_steps != [1000, 450]:
+            scheduler_uses_config_steps = True
+    if not scheduler_uses_config_steps and runtime.denoising_steps != [1000, 450]:
         raise NotImplementedError(
             f"{config_name} uses flashdreams default denoising steps [1000, 450]; "
-            f"got {manifest.denoising_steps}."
+            f"got {runtime.denoising_steps}."
         )
-    if manifest.synthetic_model:
+    if runtime.synthetic_model:
         config = _apply_synthetic_model_overrides(
             config,
-            manifest=manifest,
+            runtime=runtime,
             config_name=base_config_name,
             derive_config=derive_config,
         )
@@ -203,7 +291,7 @@ def _build_pipeline_config(
 def _apply_synthetic_model_overrides(
     config: Any,
     *,
-    manifest: WorldModelManifest,
+    runtime: OmnidreamsWorldModelRuntime,
     config_name: str,
     derive_config: Callable[..., Any],
 ) -> Any:
@@ -213,15 +301,15 @@ def _apply_synthetic_model_overrides(
     if config.decoder is None:
         raise ValueError("synthetic Omnidreams config requires a decoder")
 
-    width, height = manifest.resolution_wh
+    width, height = runtime.resolution_wh
     assets = build_synthetic_world_model_assets(
         default_synthetic_asset_dir(config_name=config_name),
         encoder_cfg=config.encoder,
         decoder_cfg=config.decoder,
-        native_vae_fp8=manifest.native_vae_encoder == "fp8",
+        native_vae_fp8=runtime.native_vae_encoder == "fp8",
         pixel_height=height,
         pixel_width=width,
-        device=manifest.device,
+        device=runtime.device,
     )
     text_encoder = getattr(config, "text_encoder", None)
     text_max_length = int(getattr(text_encoder, "max_length", 512))
@@ -256,63 +344,60 @@ def _apply_synthetic_model_overrides(
     return config
 
 
-def _base_config_name(config_name: str, manifest: WorldModelManifest) -> str:
-    if manifest.native_vae_encoder != "disabled":
-        if config_name != _LIGHTVAE_RECIPE:
-            raise ValueError("native_vae_encoder=fp8 requires light_vae=true.")
-        return _LIGHTVAE_NATIVE_PERF_RECIPE
-    if config_name == _LIGHTVAE_RECIPE:
-        return _LIGHTVAE_PERF_RECIPE if manifest.compile_encoders else _LIGHTVAE_RECIPE
-    return config_name
-
-
-def _native_vae_overrides(manifest: WorldModelManifest) -> dict[str, object]:
-    if manifest.native_vae_encoder == "disabled":
+def _native_vae_overrides(
+    runtime: OmnidreamsWorldModelRuntime,
+) -> dict[str, object]:
+    if runtime.native_vae_encoder == "disabled":
         return {}
-    if manifest.native_vae_encoder != "fp8":
+    if runtime.native_vae_encoder != "fp8":
         raise ValueError(
-            f"Unsupported native_vae_encoder={manifest.native_vae_encoder!r}"
+            f"Unsupported native_vae_encoder={runtime.native_vae_encoder!r}"
         )
 
     common: dict[str, object] = {
         "native_vae_acceleration": "required",
         "native_vae_backend": "fp8",
     }
-    if manifest.native_vae_fp8_state_path is not None:
-        common["native_vae_fp8_state_path"] = str(manifest.native_vae_fp8_state_path)
+    if runtime.native_vae_fp8_state_path is not None:
+        common["native_vae_fp8_state_path"] = str(runtime.native_vae_fp8_state_path)
     return {
         "image_encoder": dict(common),
         "encoder": dict(common),
     }
 
 
-def _transformer_overrides(manifest: WorldModelManifest) -> dict[str, object]:
+def _transformer_overrides(
+    runtime: OmnidreamsWorldModelRuntime,
+) -> dict[str, object]:
     return {
-        "skip_finalize_kv_cache": manifest.skip_finalize_kv_cache,
-        "compile_network": manifest.compile_net,
-        "native_dit_acceleration": manifest.native_dit_acceleration,
-        "native_dit_build_root": manifest.native_dit_build_root,
-        "native_dit_max_jobs": manifest.native_dit_max_jobs,
-        "native_dit_verbose_build": manifest.native_dit_verbose_build,
-        "native_dit_backend": manifest.native_dit_backend,
-        "native_dit_attention_backend": manifest.native_dit_attention_backend,
-        "native_dit_sparge_topk": manifest.native_dit_sparge_topk,
-        "native_dit_sparge_hybrid_period": manifest.native_dit_sparge_hybrid_period,
-        "native_dit_sparge_hybrid_phase": manifest.native_dit_sparge_hybrid_phase,
+        "skip_finalize_kv_cache": runtime.skip_finalize_kv_cache,
+        "compile_network": runtime.compile_net,
+        "native_dit_acceleration": runtime.native_dit_acceleration,
+        "native_dit_build_root": runtime.native_dit_build_root,
+        "native_dit_max_jobs": runtime.native_dit_max_jobs,
+        "native_dit_verbose_build": runtime.native_dit_verbose_build,
+        "native_dit_backend": runtime.native_dit_backend,
+        "native_dit_attention_backend": runtime.native_dit_attention_backend,
+        "native_dit_sparge_topk": runtime.native_dit_sparge_topk,
+        "native_dit_sparge_hybrid_period": runtime.native_dit_sparge_hybrid_period,
+        "native_dit_sparge_hybrid_phase": runtime.native_dit_sparge_hybrid_phase,
     }
 
 
-def _setup_pipeline_from_config(config: Any, manifest: WorldModelManifest) -> Any:
-    pipeline = config.setup().to(device=torch.device(manifest.device))
-    if manifest.seed_for_every_rollout is None:
-        # Let repeated fresh rollouts vary when the manifest does not pin a seed.
+def _setup_pipeline_from_config(
+    config: Any,
+    runtime: OmnidreamsWorldModelRuntime,
+) -> Any:
+    pipeline = config.setup().to(device=torch.device(runtime.device))
+    if runtime.seed_for_every_rollout is None:
+        # Let repeated fresh rollouts vary when the CLI does not pin a seed.
         pipeline.diffusion_model.config.seed = None
     return pipeline
 
 
 def _precompute_embeddings_from_config(
     config: Any,
-    manifest: WorldModelManifest,
+    runtime: OmnidreamsWorldModelRuntime,
     *,
     initial_rgb: object,
     prompt: str,
@@ -332,7 +417,7 @@ def _precompute_embeddings_from_config(
             "The flashdreams-omnidreams package is required for --offload-text-encoder."
         ) from exc
 
-    device = torch.device(manifest.device)
+    device = torch.device(runtime.device)
     image = _initial_rgb_tensor(initial_rgb, device=device)
     text = [[prompt]]
     transformer_config = getattr(config.diffusion_model, "transformer", None)
@@ -403,10 +488,10 @@ def _precompute_embeddings_from_config(
 
 
 def _default_pipeline_factory(
-    manifest: WorldModelManifest, profile: WorldModelProfileConfig
+    runtime: OmnidreamsWorldModelRuntime, profile: WorldModelProfileConfig
 ) -> Any:
-    config = _build_pipeline_config(manifest, profile)
-    return _setup_pipeline_from_config(config, manifest)
+    config = _build_pipeline_config(runtime, profile)
+    return _setup_pipeline_from_config(config, runtime)
 
 
 def _initial_rgb_tensor(frame: object, *, device: torch.device) -> torch.Tensor:
@@ -422,7 +507,7 @@ def _to_model_range(tensor: torch.Tensor, *, device: torch.device) -> torch.Tens
 
 def _synthetic_embeddings_for_pipeline(
     pipeline: Any,
-    manifest: WorldModelManifest,
+    runtime: OmnidreamsWorldModelRuntime,
 ) -> dict[str, torch.Tensor | None]:
     transformer = pipeline.diffusion_model.transformer
     transformer_cfg = transformer.config
@@ -448,7 +533,7 @@ def _synthetic_embeddings_for_pipeline(
     if decoder is None:
         raise RuntimeError("synthetic_model requires a video decoder")
     compression = int(decoder.spatial_compression_ratio)
-    width, height = manifest.resolution_wh
+    width, height = runtime.resolution_wh
     if height % compression or width % compression:
         raise ValueError(
             "synthetic_model resolution_wh must be divisible by decoder "
@@ -486,14 +571,14 @@ class FlashdreamsWorldModelSession:
 
     def __init__(
         self,
-        manifest: WorldModelManifest,
+        runtime: OmnidreamsWorldModelRuntime,
         profile: WorldModelProfileConfig | None = None,
         *,
         offload_text_encoder: bool = False,
         pipeline_factory: PipelineFactory | None = None,
         postprocess: VideoPostprocessChainConfig | None = None,
     ) -> None:
-        self.manifest = manifest
+        self.runtime = runtime
         self._profile_config = profile or WorldModelProfileConfig()
         self._offload_text_encoder = bool(offload_text_encoder)
         self._pipeline_factory = pipeline_factory
@@ -518,7 +603,7 @@ class FlashdreamsWorldModelSession:
         # AR pipeline is allocated (peak-VRAM ordering); every other path
         # builds the pipeline eagerly with no scene needed.
         return (
-            self.manifest.synthetic_model
+            self.runtime.synthetic_model
             or self._pipeline_factory is not None
             or not self._offload_text_encoder
         )
@@ -534,18 +619,18 @@ class FlashdreamsWorldModelSession:
         if (
             self._pipeline_factory is None
             and self._offload_text_encoder
-            and not self.manifest.synthetic_model
+            and not self.runtime.synthetic_model
         ):
             return
 
         def build_and_validate_pipeline() -> None:
             if self._pipeline_factory is not None:
                 self._pipeline = self._pipeline_factory(
-                    self.manifest, self._profile_config
+                    self.runtime, self._profile_config
                 )
             else:
-                config = _build_pipeline_config(self.manifest, self._profile_config)
-                self._pipeline = _setup_pipeline_from_config(config, self.manifest)
+                config = _build_pipeline_config(self.runtime, self._profile_config)
+                self._pipeline = _setup_pipeline_from_config(config, self.runtime)
             self._validate_chunk_sizes()
 
         warmup_timing = run_timed_prewarm(
@@ -567,7 +652,7 @@ class FlashdreamsWorldModelSession:
         (precompute embeddings -> free encoders -> build pipeline) to keep
         peak VRAM low; the factory test path recomputes lazily in ``start``.
         """
-        if self.manifest.synthetic_model:
+        if self.runtime.synthetic_model:
             return
         if not self._offload_text_encoder:
             return
@@ -579,15 +664,15 @@ class FlashdreamsWorldModelSession:
                 "offload_text_encoder requires the scene initial_rgb and prompt."
             )
         self._release_pipeline()
-        config = _build_pipeline_config(self.manifest, self._profile_config)
+        config = _build_pipeline_config(self.runtime, self._profile_config)
         self._precomputed_embeddings = _precompute_embeddings_from_config(
             config,
-            self.manifest,
+            self.runtime,
             initial_rgb=initial_rgb,
             prompt=prompt,
         )
         config = replace(config, text_encoder=None, image_encoder=None)
-        self._pipeline = _setup_pipeline_from_config(config, self.manifest)
+        self._pipeline = _setup_pipeline_from_config(config, self.runtime)
         self._validate_chunk_sizes()
 
     def _validate_chunk_sizes(self) -> None:
@@ -600,10 +685,10 @@ class FlashdreamsWorldModelSession:
                 "flashdreams initial chunk size does not match interactive-drive's first chunk: "
                 f"{first_chunk_frames} vs 5"
             )
-        if steady_chunk_frames != self.manifest.num_frames_per_block:
+        if steady_chunk_frames != self.runtime.num_frames_per_block:
             raise ValueError(
-                "flashdreams steady-state chunk size does not match the manifest: "
-                f"{steady_chunk_frames} vs {self.manifest.num_frames_per_block}"
+                "flashdreams steady-state chunk size does not match the runtime config: "
+                f"{steady_chunk_frames} vs {self.runtime.num_frames_per_block}"
             )
 
     def _release_pipeline(self) -> None:
@@ -613,7 +698,7 @@ class FlashdreamsWorldModelSession:
             self._model_session.close()
             self._model_session = None
         self._pipeline = None
-        device = torch.device(self.manifest.device)
+        device = torch.device(self.runtime.device)
         collect_and_release_cuda_memory(
             device=device,
             synchronize_cuda=device.type == "cuda",
@@ -641,7 +726,7 @@ class FlashdreamsWorldModelSession:
                 self._condition_tensor(condition_frames),
                 delay_finalization=True,
             )
-            model_frames = list(result.lazy_rgb_frames())
+            model_frames: list[object] = list(result.lazy_rgb_frames())
             _synchronize_cuda_frame_event(model_frames)
         elapsed_ms = (time.perf_counter() - start) * 1000.0
         logger.info(f"[flashdreams-session] start total_ms={elapsed_ms:.1f}")
@@ -664,7 +749,7 @@ class FlashdreamsWorldModelSession:
                 self._condition_tensor(condition_frames),
                 delay_finalization=True,
             )
-            model_frames = list(result.lazy_rgb_frames())
+            model_frames: list[object] = list(result.lazy_rgb_frames())
             _synchronize_cuda_frame_event(model_frames)
         block_index = result.step_index
         elapsed_ms = (time.perf_counter() - start) * 1000.0
@@ -714,7 +799,7 @@ class FlashdreamsWorldModelSession:
             postprocess_stream = VideoPostprocessStream(
                 postprocess=self._postprocess,
                 output_layout="bvtchw",
-                fps=self.manifest.fps,
+                fps=self.runtime.fps,
                 per_view=False,
                 world_size=1,
             )
@@ -732,7 +817,7 @@ class FlashdreamsWorldModelSession:
         return self._model_session
 
     def _initialize_cache(self, initial_rgb: object, prompt: str) -> Any:
-        if self.manifest.synthetic_model:
+        if self.runtime.synthetic_model:
             return self._initialize_synthetic_cache()
         if self._offload_text_encoder:
             embeddings = self._ensure_precomputed_embeddings(initial_rgb, prompt)
@@ -766,7 +851,7 @@ class FlashdreamsWorldModelSession:
             )
         embeddings = _synthetic_embeddings_for_pipeline(
             self.pipeline,
-            self.manifest,
+            self.runtime,
         )
         return initialize_cache_from_embeddings(
             text_embeddings=embeddings["text_embeddings"],

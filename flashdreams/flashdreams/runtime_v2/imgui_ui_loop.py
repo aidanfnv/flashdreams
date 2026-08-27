@@ -9,7 +9,7 @@ from typing import Any, Generic, TypeVar, final
 from torch import Tensor
 
 from flashdreams.api_v2.loop import IUILoop
-from flashdreams.runtime_v2._imgui_ui_renderer import _ImGuiUIRenderer
+from flashdreams.runtime_v2.imgui_ui_renderer import _ImGuiUIRenderer
 from flashdreams.runtime_v2.slangpy_ui_renderer import _UIRenderer
 from flashdreams.runtime_v2.step_result import StepResult
 from flashdreams.runtime_v2.user_input_events import UserInputEvents

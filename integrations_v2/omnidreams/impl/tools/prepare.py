@@ -33,8 +33,9 @@ import shutil
 import sys
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import unquote, urlparse
 
-from omnidreams.impl.hf_org import DEFAULT_HF_ORG, apply_cli_to_env
+from omnidreams.impl.hf_org import DEFAULT_HF_ORG, apply_cli_to_env, hf_access_hint
 from omnidreams.impl.scenes import (
     SCENE_VARIANT_DEFAULT,
     hf_hub_download_scene,
@@ -153,7 +154,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Sync the pinned third-party CUDA sources required by the perf "
-            "manifest's native acceleration (example_world_model_perf.yaml). "
+            "application config's native acceleration. "
             "Clones them into omnidreams_singleview/3rdparty/; the extension "
             "itself compiles on first run. Requires a source checkout and git."
         ),
@@ -196,31 +197,45 @@ def scene_path(scene_uuid: str, variant: str = SCENE_VARIANT_DEFAULT) -> Path:
     return local_scene_archive_path(scene_uuid, variant)
 
 
+def _download_hf_file(url: str) -> Path:
+    """Download one Hugging Face file URL into the local cache."""
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import RepositoryNotFoundError
+
+    parsed = urlparse(url)
+    parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+    if len(parts) < 5 or parts[2] not in {"blob", "resolve"}:
+        raise ValueError(
+            f"Invalid Hugging Face file URL: {url}. Expected "
+            "/<namespace>/<repo>/blob|resolve/<revision>/<path/to/file>."
+        )
+    namespace, repo, _route, revision, *file_parts = parts
+    repo_id = f"{namespace}/{repo}"
+    try:
+        local_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=file_parts[-1],
+            subfolder="/".join(file_parts[:-1]) or None,
+            revision=revision,
+        )
+    except RepositoryNotFoundError as exc:
+        raise RuntimeError(hf_access_hint(repo_id, url)) from exc
+    return Path(local_path)
+
+
 def prewarm_huggingface_cache(
     urls: tuple[str, ...],
     repos: tuple[tuple[str, str], ...] = (),
 ) -> None:
-    """Pre-download the HF files + full repos referenced by the default manifest.
+    """Pre-download the HF files and repositories used by public configs.
 
-    File URLs go through ``WorldModelManifest``'s parser (same code path used at
-    runtime); ``(repo_id, revision)`` pairs are materialised via
-    ``snapshot_download`` so that ``from_pretrained(repo_id, revision=...)``
-    calls at runtime don't touch the network. ``revision`` must match the
-    commit the runtime loads -- a HEAD prewarm with a pinned runtime
-    revision ends up re-downloading at first launch.
+    ``(repo_id, revision)`` pairs are materialised via ``snapshot_download`` so
+    that ``from_pretrained(repo_id, revision=...)`` calls at runtime do not
+    touch the network. ``revision`` must match the commit the runtime loads.
     """
-    try:
-        from omnidreams.apps.interactive_drive.manifest import download_hf_file
-    except Exception as exc:  # pragma: no cover - interactive_drive must be importable
-        raise RuntimeError(
-            "Unable to import omnidreams.apps.interactive_drive.manifest; run "
-            "`uv sync --package flashdreams-omnidreams` from the "
-            "flashdreams workspace root first."
-        ) from exc
-
     for url in urls:
         info(f"Pre-warming HF cache: {url}")
-        local = download_hf_file(url)
+        local = _download_hf_file(url)
         info(f"  \u2192 {local}")
 
     if not repos:
@@ -301,12 +316,12 @@ def _sync_thirdparty_module() -> ModuleType:
 
 
 def sync_perf_thirdparty(*, force: bool) -> None:
-    """Sync the pinned native CUDA sources the perf manifest builds against.
+    """Sync the pinned native CUDA sources the perf application builds against.
 
-    ``example_world_model_perf.yaml`` (``native_dit_acceleration: required``)
-    compiles against CUTLASS, SageAttention, SpargeAttn, and cudnn-frontend.
-    Clones them into ``omnidreams_singleview/3rdparty/``; the extension itself
-    builds on first run. Needs git + network.
+    The app-owned perf manifests compile against CUTLASS, SageAttention,
+    SpargeAttn, and cudnn-frontend. Clones them into
+    ``omnidreams_singleview/3rdparty/``; the extension itself builds on first
+    run. Needs git + network.
     """
     sync = _sync_thirdparty_module()
     try:

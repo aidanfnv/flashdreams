@@ -18,11 +18,8 @@ from typing import Any, cast
 
 import pytest
 import torch
+from omnidreams.config import OMNIDREAMS_PIPELINE_CONFIG
 from omnidreams.impl import transformer as omnidreams_transformer_module
-from omnidreams.config import (
-    OMNIDREAMS_CONFIGS,
-    SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE,
-)
 from omnidreams.impl.constants import NEGATIVE_PROMPT
 from omnidreams.impl.pipeline import (
     OmnidreamsPipeline,
@@ -38,9 +35,6 @@ from omnidreams.impl.transformer.context_parallel import (
 
 # Mixed markers: most tests are ci_cpu; streaming_inference is manual.
 # Per-function markers used below.
-from flashdreams.infra.diffusion.scheduler.fm_unipc import (
-    FlowMatchUniPCSchedulerConfig,
-)
 from flashdreams.infra.pipeline import StreamInferencePipeline
 
 
@@ -358,50 +352,6 @@ def test_cosmos_transformer_checkpoint_path_none_keeps_random_init(
 
 
 @pytest.mark.ci_cpu
-@pytest.mark.parametrize(
-    (
-        "config_name",
-        "expected_len_t",
-        "expected_window_size_t",
-        "expected_skip_finalize_kv_cache",
-    ),
-    [
-        (
-            "omnidreams-sv-35steps-chunk2-loc24-cosmos2-2b-res720p-30fps-hdmap-vae-mads1m",
-            2,
-            24,
-            False,
-        ),
-        (
-            "omnidreams-sv-35steps-chunk48-loc48-cosmos2-2b-res720p-30fps-hdmap-vae-mads1m",
-            48,
-            48,
-            True,
-        ),
-    ],
-)
-def test_omnidreams_teacher_configs_wire_cfg_negative_text(
-    config_name: str,
-    expected_len_t: int,
-    expected_window_size_t: int,
-    expected_skip_finalize_kv_cache: bool,
-) -> None:
-    pipeline_config = OMNIDREAMS_CONFIGS[config_name]
-    transformer_config = pipeline_config.diffusion_model.transformer
-
-    assert isinstance(transformer_config, CosmosTransformerConfig)
-    assert transformer_config.guidance_scale > 1.0
-    assert transformer_config.requires_negative_text_embeddings
-    assert transformer_config.len_t == expected_len_t
-    assert transformer_config.window_size_t == expected_window_size_t
-    assert transformer_config.skip_finalize_kv_cache is expected_skip_finalize_kv_cache
-
-    scheduler_config = pipeline_config.diffusion_model.scheduler
-    assert isinstance(scheduler_config, FlowMatchUniPCSchedulerConfig)
-    assert scheduler_config.num_inference_steps == 35
-    assert scheduler_config.shift == 5.0
-
-
 @pytest.mark.manual
 def test_omnidreams_streaming_inference():
     num_views = 1
@@ -415,7 +365,7 @@ def test_omnidreams_streaming_inference():
     image = torch.randn(1, num_views, 1, 3, height, width, device=device, dtype=dtype)
     text = [["Hello, world!"] * num_views]
 
-    config = SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE
+    config = OMNIDREAMS_PIPELINE_CONFIG
     pipeline = config.setup().to(device)
     assert isinstance(pipeline, OmnidreamsPipeline)
     cache = pipeline.initialize_cache(text=text, image=image)

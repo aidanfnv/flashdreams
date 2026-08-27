@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -14,10 +13,14 @@ import torch
 from clipgt2v.interactive_drive.config import WorldModelProfileConfig
 from omnidreams.apps.interactive_drive.model import (
     FlashdreamsWorldModelSession,
+    OmnidreamsWorldModelRuntime,
     _build_pipeline_config,
     _select_config_name,
 )
-from omnidreams.apps.interactive_drive.manifest import WorldModelManifest
+from omnidreams.config import (
+    OMNIDREAMS_PERF_PIPELINE_CONFIG,
+    OMNIDREAMS_PIPELINE_CONFIG,
+)
 from omnidreams.impl.synthetic_fixture import (
     SyntheticWorldModelAssets,
 )
@@ -92,8 +95,19 @@ class _FakeSyntheticPipeline(_FakePipeline):
         self.V_size = 1
 
 
-def _manifest() -> WorldModelManifest:
-    return WorldModelManifest()
+def _runtime(
+    *,
+    perf: bool = False,
+) -> OmnidreamsWorldModelRuntime:
+    return OmnidreamsWorldModelRuntime(
+        pipeline_config=(
+            OMNIDREAMS_PERF_PIPELINE_CONFIG if perf else OMNIDREAMS_PIPELINE_CONFIG
+        ),
+        resolution_wh=(1280, 704),
+        fps=30,
+        num_frames_per_block=8,
+        device="cpu",
+    )
 
 
 def _contains_hf_url(value: object) -> bool:
@@ -111,75 +125,22 @@ def _contains_hf_url(value: object) -> bool:
     return False
 
 
-def test_select_config_name_uses_omnidreams_recipe_slugs() -> None:
-    assert (
-        _select_config_name(_manifest())
-        == "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae"
-    )
-    assert (
-        _select_config_name(replace(_manifest(), light_vae=False))
-        == "omnidreams-sv-2steps-chunk2-loc6-vae-vae"
-    )
-    assert (
-        _select_config_name(
-            replace(
-                _manifest(),
-                encode_with_pixel_shuffle=True,
-                local_attn_size=8,
-                num_frames_per_block=16,
-            )
-        )
-        == "omnidreams-sv-2steps-chunk4-loc8-pshuffle-lighttae"
-    )
+def test_select_config_name_uses_only_public_clipgt2v_slugs() -> None:
+    assert _select_config_name(_runtime()) == "omnidreams"
+    assert _select_config_name(_runtime(perf=True)) == "omnidreams-perf"
 
 
-def test_build_pipeline_config_uses_manifest_native_dit_overrides() -> None:
+def test_build_pipeline_config_uses_selected_perf_config() -> None:
     config = _build_pipeline_config(
-        replace(
-            _manifest(),
-            skip_finalize_kv_cache=True,
-            native_dit_acceleration="required",
-            native_dit_verbose_build=True,
-            native_dit_backend="bf16",
-            native_dit_attention_backend="sparge",
-            native_dit_sparge_topk=0.4,
-            native_dit_sparge_hybrid_period=4,
-            native_dit_sparge_hybrid_phase=1,
-        ),
+        _runtime(perf=True),
         profile=WorldModelProfileConfig(),
     )
     transformer_config = config.diffusion_model.transformer
 
     assert transformer_config.skip_finalize_kv_cache is True
     assert transformer_config.native_dit_acceleration == "required"
-    assert transformer_config.native_dit_verbose_build is True
-    assert transformer_config.native_dit_backend == "bf16"
-    assert transformer_config.native_dit_attention_backend == "sparge"
-    assert transformer_config.native_dit_sparge_topk == 0.4
-    assert transformer_config.native_dit_sparge_hybrid_period == 4
-    assert transformer_config.native_dit_sparge_hybrid_phase == 1
-
-
-def test_build_pipeline_config_can_select_native_vae_encoder() -> None:
-    config = _build_pipeline_config(
-        replace(
-            _manifest(),
-            native_vae_encoder="fp8",
-            native_vae_fp8_state_path=Path("/tmp/lightvae-fp8-state.pt"),
-        ),
-        profile=WorldModelProfileConfig(),
-    )
-
-    assert (
-        config.name == "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-native-perf"
-    )
-    assert config.image_encoder.native_vae_acceleration == "required"
-    assert config.image_encoder.native_vae_backend == "fp8"
-    assert Path(config.image_encoder.native_vae_fp8_state_path) == Path(
-        "/tmp/lightvae-fp8-state.pt"
-    )
-    assert config.encoder.native_vae_acceleration == "required"
-    assert config.encoder.native_vae_backend == "fp8"
+    assert transformer_config.native_dit_backend == "fp8_kvcache_cudnn"
+    assert transformer_config.native_dit_attention_backend == "cudnn"
 
 
 def test_build_pipeline_config_synthetic_swaps_only_weight_sources(
@@ -202,19 +163,15 @@ def test_build_pipeline_config_synthetic_swaps_only_weight_sources(
         fake_assets,
     )
 
-    manifest = replace(
-        _manifest(),
+    runtime = replace(
+        _runtime(perf=True),
         synthetic_model=True,
-        skip_finalize_kv_cache=True,
-        native_dit_acceleration="required",
-        native_dit_backend="bf16",
-        native_dit_attention_backend="cudnn",
     )
     real = _build_pipeline_config(
-        replace(manifest, synthetic_model=False),
+        replace(runtime, synthetic_model=False),
         profile=WorldModelProfileConfig(),
     )
-    synthetic = _build_pipeline_config(manifest, profile=WorldModelProfileConfig())
+    synthetic = _build_pipeline_config(runtime, profile=WorldModelProfileConfig())
 
     real_transformer = real.diffusion_model.transformer
     synthetic_transformer = synthetic.diffusion_model.transformer
@@ -242,31 +199,11 @@ def test_build_pipeline_config_synthetic_swaps_only_weight_sources(
     assert not _contains_hf_url(synthetic)
 
 
-def test_build_pipeline_config_can_skip_io_compilation() -> None:
-    config = _build_pipeline_config(
-        replace(_manifest(), compile_encoders=False, compile_decoder=False),
-        profile=WorldModelProfileConfig(),
-    )
-
-    assert config.encoder.use_compile is False
-    assert config.image_encoder.use_compile is False
-    assert config.decoder.use_compile is False
-    assert config.diffusion_model.transformer.compile_network is True
-
-
-def test_native_vae_encoder_requires_light_vae_recipe() -> None:
-    with pytest.raises(ValueError, match="native_vae_encoder=fp8 requires light_vae"):
-        _build_pipeline_config(
-            replace(_manifest(), light_vae=False, native_vae_encoder="fp8"),
-            profile=WorldModelProfileConfig(),
-        )
-
-
 def test_session_uses_flashdreams_pipeline_for_rollout() -> None:
     fake_pipeline = _FakePipeline()
     session = FlashdreamsWorldModelSession(
-        _manifest(),
-        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        _runtime(),
+        pipeline_factory=lambda runtime, profile: fake_pipeline,
     )
     session.warmup_model()
 
@@ -319,8 +256,8 @@ def test_session_postprocesses_local_frames_and_supports_live_toggle(
     )
     fake_pipeline = _FakePipeline()
     session = FlashdreamsWorldModelSession(
-        _manifest(),
-        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        _runtime(),
+        pipeline_factory=lambda runtime, profile: fake_pipeline,
         postprocess=VideoPostprocessChainConfig(preset="fake-preset"),
     )
     session.warmup_model()
@@ -332,7 +269,7 @@ def test_session_postprocesses_local_frames_and_supports_live_toggle(
     first_stream = streams[0]
     assert first_stream.calls == [0]
     assert first_stream.kwargs["output_layout"] == "bvtchw"
-    assert first_stream.kwargs["fps"] == session.manifest.fps
+    assert first_stream.kwargs["fps"] == session.runtime.fps
     assert "collect_output" not in first_stream.kwargs
     assert "move_to_cpu" not in first_stream.kwargs
 
@@ -349,11 +286,11 @@ def test_session_postprocesses_local_frames_and_supports_live_toggle(
 
 def test_session_synthetic_model_initializes_cache_from_synthetic_embeddings() -> None:
     fake_pipeline = _FakeSyntheticPipeline()
-    manifest = replace(_manifest(), synthetic_model=True, resolution_wh=(64, 32))
+    runtime = replace(_runtime(), synthetic_model=True, resolution_wh=(64, 32))
     session = FlashdreamsWorldModelSession(
-        manifest,
+        runtime,
         offload_text_encoder=True,
-        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        pipeline_factory=lambda runtime, profile: fake_pipeline,
     )
     assert session.can_prewarm is True
     session.warmup_model()
@@ -376,8 +313,8 @@ def test_session_synthetic_model_initializes_cache_from_synthetic_embeddings() -
 def test_session_synchronizes_generated_frame_events_before_return(monkeypatch) -> None:
     fake_pipeline = _FakePipeline()
     session = FlashdreamsWorldModelSession(
-        _manifest(),
-        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        _runtime(),
+        pipeline_factory=lambda runtime, profile: fake_pipeline,
     )
     session.warmup_model()
     sync_calls: list[list[object]] = []
@@ -411,9 +348,9 @@ def test_lazy_rgb_frame_exposes_tensor_before_host_materialization() -> None:
 def test_session_offload_reuses_precomputed_embeddings_after_reset() -> None:
     fake_pipeline = _FakePipeline()
     session = FlashdreamsWorldModelSession(
-        _manifest(),
+        _runtime(),
         offload_text_encoder=True,
-        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        pipeline_factory=lambda runtime, profile: fake_pipeline,
     )
     session.warmup_model()
 
@@ -442,9 +379,9 @@ def test_session_offload_reuses_precomputed_embeddings_after_reset() -> None:
 def test_session_offload_reruns_embeddings_after_scene_conditioning_reset() -> None:
     fake_pipeline = _FakePipeline()
     session = FlashdreamsWorldModelSession(
-        _manifest(),
+        _runtime(),
         offload_text_encoder=True,
-        pipeline_factory=lambda manifest, profile: fake_pipeline,
+        pipeline_factory=lambda runtime, profile: fake_pipeline,
     )
     session.warmup_model()
 

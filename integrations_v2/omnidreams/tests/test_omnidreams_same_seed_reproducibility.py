@@ -90,7 +90,7 @@ import pytest
 pytestmark = pytest.mark.ci_gpu
 
 # Distilled single-view recipe: 2-step flow-match, CFG off, ~1 s per 4 blocks.
-_RECIPE = "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae"
+_RECIPE = "omnidreams"
 _DEFAULT_SEED = int(os.environ.get("OMNIDREAMS_REPRO_SEED", "1"))
 _DEFAULT_TOTAL_BLOCKS = int(os.environ.get("OMNIDREAMS_REPRO_TOTAL_BLOCKS", "4"))
 _DEFAULT_RUN_TIMEOUT_SECONDS = int(

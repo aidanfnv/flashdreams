@@ -15,7 +15,7 @@ from omnidreams.config import OMNIDREAMS_CONFIGS
 
 from flashdreams.infra.config import derive_config
 
-DEFAULT_CONFIG = "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae"
+DEFAULT_CONFIG = "omnidreams"
 VAE_FP8_VERSION_KEY = "__omnidreams_vae_fp8_version__"
 MODEL_KIND_KEY = "__omnidreams_vae_fp8_model_kind__"
 STATE_SCALE_MAX_KEY = "__omnidreams_vae_fp8_scale_max__"

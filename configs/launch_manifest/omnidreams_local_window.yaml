@@ -5,6 +5,3 @@ mode: local-window
 scenario:
   auto_start: false
   preload_scenes: false
-
-output:
-  world_model_manifest_path: ../../apps/clipgt2v/clipgt2v/interactive_drive/configs/example_world_model_perf.yaml

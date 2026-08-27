@@ -19,20 +19,21 @@ from clipgt2v.app import (
     ClipGT2VModelState,
     DriveTelemetry,
 )
+from interactive_drive import (
+    DEFAULT_SCENE_FILENAME,
+    DEFAULT_SCENE_REPO_ID,
+    InteractiveDriveApplication,
+    InteractiveDriveConfig,
+    InteractiveDriveSession,
+    InteractiveDriveUILoop,
+    download_default_scene,
+)
+
 from flashdreams.runtime_v2.user_input_event import (
     KeyboardInputState,
     KeyboardUserInputEvent,
 )
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
-from interactive_drive import (
-    DEFAULT_SCENE_FILENAME,
-    DEFAULT_SCENE_REPO_ID,
-    InteractiveDriveApplication,
-    InteractiveDriveSession,
-    InteractiveDriveUILoop,
-    download_default_scene,
-    resolve_bundled_world_model_manifest,
-)
 
 pytestmark = pytest.mark.ci_cpu
 
@@ -255,45 +256,6 @@ def test_interactive_drive_exposes_game_mode(tmp_path: Path) -> None:
     assert app._config.app.vehicle.static_collision_enabled is True
 
 
-def test_world_model_uses_manifest_bundled_with_interactive_drive(
-    tmp_path: Path,
-) -> None:
-    scene = tmp_path / "default.usdz"
-    scene.touch()
-    loaded_manifests: list[Path] = []
-
-    def load_manifest(path: Path) -> Any:
-        loaded_manifests.append(path)
-        return SimpleNamespace(
-            fps=30,
-            num_frames_per_block=8,
-            resolution_wh=(1280, 704),
-        )
-
-    def unexpected_integration_resolver(path: str | Path) -> Path:
-        raise AssertionError(f"integration resolver should not resolve {path}")
-
-    hooks = ClipGT2VApplicationHooks(
-        backend_factory=lambda config: config,
-        manifest_loader=load_manifest,
-        manifest_resolver=unexpected_integration_resolver,
-    )
-    app = InteractiveDriveApplication(
-        hooks=hooks,
-        default_scene_resolver=lambda: scene,
-    )
-
-    app.init([])
-
-    expected = resolve_bundled_world_model_manifest("example_world_model.yaml")
-    assert expected.is_file()
-    assert expected.parent.name == "configs"
-    assert expected.parent.parent.name == "interactive_drive"
-    assert loaded_manifests == [expected]
-    assert app._config is not None
-    assert app._config.app.manifest_path == expected
-
-
 def test_world_model_accepts_postprocess_preset(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -307,11 +269,6 @@ def test_world_model_accepts_postprocess_preset(
     )
     hooks = ClipGT2VApplicationHooks(
         backend_factory=lambda config: config,
-        manifest_loader=lambda _path: SimpleNamespace(
-            fps=30,
-            num_frames_per_block=8,
-            resolution_wh=(1280, 704),
-        ),
     )
     app = InteractiveDriveApplication(
         hooks=hooks,
@@ -321,6 +278,7 @@ def test_world_model_accepts_postprocess_preset(
     app.init(["--postprocess-preset", "example-preset"])
 
     assert app._config is not None
+    assert isinstance(app._config, InteractiveDriveConfig)
     assert app._config.app.postprocess.preset == "example-preset"
 
 

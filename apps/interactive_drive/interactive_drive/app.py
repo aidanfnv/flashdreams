@@ -26,27 +26,20 @@ from clipgt2v.app import (
     ViewMode,
 )
 from clipgt2v.interactive_drive.scene_loader import load_scene_bundle
+from PIL import Image
+from torch import Tensor
+
 from flashdreams.api_v2.loop import IModelLoop, invoke_async
 from flashdreams.api_v2.session import ISession
 from flashdreams.runtime_v2.imgui_ui_loop import ImGuiUILoop
 from flashdreams.runtime_v2.session_desc import SessionDesc
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
 from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
-from PIL import Image
-from torch import Tensor
 
+from .config import InteractiveDriveConfig
 from .scene_download import download_default_scene
 
 _SCENE_STEM = re.compile(r"^clipgt-(?P<uuid>[0-9a-fA-F-]{36})(?:-(?P<variant>.+))?$")
-
-
-def resolve_bundled_world_model_manifest(path: str | Path) -> Path:
-    """Resolve a world-model manifest from this application's package data."""
-    raw_path = Path(path)
-    if raw_path.is_absolute():
-        return raw_path
-    resource = resources.files("interactive_drive").joinpath("configs", *raw_path.parts)
-    return Path(str(resource))
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,14 +372,11 @@ class InteractiveDriveApplication(ClipGT2VApplication):
         scene_loader: SceneLoader = load_scene_bundle,
         default_scene_resolver: Callable[[], Path] | None = None,
         scene_options: Sequence[InteractiveDriveSceneOption] = (),
+        defaults: ClipGT2VApplicationDefaults | None = None,
     ) -> None:
-        if hooks is not None:
-            hooks = replace(
-                hooks,
-                manifest_resolver=resolve_bundled_world_model_manifest,
-            )
         super().__init__(
-            defaults=ClipGT2VApplicationDefaults(
+            defaults=defaults
+            or ClipGT2VApplicationDefaults(
                 title="Interactive Drive",
                 slug="interactive-drive",
                 backend="world_model" if hooks is not None else "raster",
@@ -403,6 +393,12 @@ class InteractiveDriveApplication(ClipGT2VApplication):
         """Parse common driving options and enable BEV output for the HUD."""
         super().init(commandline_args)
         assert self._config is not None
+        self._config = InteractiveDriveConfig(
+            app=self._config.app,
+            total_blocks=self._config.total_blocks,
+            view_mode=self._config.view_mode,
+            no_ui=self._config.no_ui,
+        )
         self._config = replace(
             self._config,
             app=replace(
@@ -542,5 +538,4 @@ __all__ = [
     "InteractiveDriveSession",
     "InteractiveDriveUILoop",
     "InteractiveDriveUIState",
-    "resolve_bundled_world_model_manifest",
 ]

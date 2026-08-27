@@ -13,12 +13,14 @@ implementations or runner shims; they expose small bindings from
 
 Each model package registers the applications it supports through the
 `flashdreams.applications_v2` entry-point group. For example, OmniDreams binds
-the reusable ClipGT2V and interactive-drive applications:
+regular and performance-tuned variants of both reusable applications:
 
 ```toml
 [project.entry-points."flashdreams.applications_v2"]
-"clipgt2v" = "omnidreams.apps.clipgt2v.adapter:create_app"
-"interactive-drive" = "omnidreams.apps.interactive_drive.adapter:create_app"
+"clipgt2v-omnidreams" = "omnidreams.apps.clipgt2v.adapter:create_app"
+"clipgt2v-omnidreams-perf" = "omnidreams.apps.clipgt2v.adapter:create_perf_app"
+"interactive-drive-omnidreams" = "omnidreams.apps.interactive_drive.adapter:create_app"
+"interactive-drive-omnidreams-perf" = "omnidreams.apps.interactive_drive.adapter:create_perf_app"
 ```
 
 Action2V can be bound by more than one model without duplicating the

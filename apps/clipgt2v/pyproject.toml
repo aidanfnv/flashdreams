@@ -23,7 +23,6 @@ include = ["clipgt2v*"]
 
 [tool.setuptools.package-data]
 "clipgt2v.interactive_drive" = [
-    "configs/*.yaml",
     "configs/wheels/*.yaml",
     "assets/README.md",
     "assets/wheel_and_pedals/*.png",

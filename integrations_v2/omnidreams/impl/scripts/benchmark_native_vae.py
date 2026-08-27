@@ -21,8 +21,7 @@ from typing import Any
 
 import torch
 
-BASELINE_CONFIG = "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf"
-NATIVE_CONFIG = "omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-native-perf"
+BASELINE_CONFIG = "omnidreams-perf"
 FP8_STATE_ENV = "OMNIDREAMS_LIGHTVAE_FP8_STATE_PATH"
 
 
@@ -44,7 +43,6 @@ class EncoderRow:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-config", default=BASELINE_CONFIG)
-    parser.add_argument("--native-config", default=NATIVE_CONFIG)
     parser.add_argument(
         "--baseline-eager",
         action="store_true",
@@ -275,10 +273,20 @@ def _run(args: argparse.Namespace, configs: dict[str, Any]) -> list[EncoderRow]:
     torch.manual_seed(args.seed)
 
     baseline_cfg = configs[args.baseline_config]
-    native_cfg = configs[args.native_config]
-    if args.baseline_eager:
-        from flashdreams.infra.config import derive_config
+    from flashdreams.infra.config import derive_config
 
+    native_cfg = derive_config(
+        baseline_cfg,
+        encoder=dict(
+            dtype=torch.float16,
+            use_compile=False,
+            use_cuda_graph=False,
+            native_vae_acceleration="required",
+            native_vae_backend="fp8",
+            native_vae_fp8_state_path=args.fp8_state_path,
+        ),
+    )
+    if args.baseline_eager:
         baseline_cfg = derive_config(
             baseline_cfg,
             image_encoder=dict(use_compile=False, use_cuda_graph=False),

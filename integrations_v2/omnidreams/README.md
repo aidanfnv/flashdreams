@@ -296,7 +296,7 @@ uv sync --python 3.12 --package flashdreams-omnidreams --no-dev
 Generate an MP4 using a local USDZ scene:
 
 ```bash
-uv run --python 3.12 --package flashdreams-omnidreams flashdreams-run-v2 \
+uv run --package flashdreams-omnidreams flashdreams-run-v2 \
   clipgt2v --mode mp4 --output-path outputs/omnidreams.mp4 -- \
   --scene /path/to/scene.usdz --total-blocks 10
 ```
@@ -304,7 +304,7 @@ uv run --python 3.12 --package flashdreams-omnidreams flashdreams-run-v2 \
 Serve the same application through WebRTC:
 
 ```bash
-uv run --python 3.12 --package flashdreams-omnidreams flashdreams-run-v2 \
+uv run --package flashdreams-omnidreams flashdreams-run-v2 \
   clipgt2v --mode webrtc --host 0.0.0.0 --port 8089 -- \
   --scene /path/to/scene.usdz
 ```
@@ -318,7 +318,7 @@ manifest. Application-specific arguments go after `--`.
 From the workspace root, run:
 
 ```bash
-uv run --package flashdreams-omnidreams torchrun --nproc_per_node 1 -m omnidreams.impl.grpc.server --pipeline_config_name omnidreams-sv-2steps-chunk2-loc6-lightvae-lighttae-perf --host 0.0.0.0 --port 50051
+uv run --package flashdreams-omnidreams torchrun --nproc_per_node 1 -m omnidreams.impl.grpc.server --pipeline_config_name omnidreams-perf --host 0.0.0.0 --port 50051
 ```
 
 The server implements `omnidreams.impl.grpc.protos.video_model.WorldModelService`

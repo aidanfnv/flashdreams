@@ -380,37 +380,6 @@ def test_native_wan_vae_encoder_executor_required_raises_on_bad_dtype() -> None:
 
 
 @pytest.mark.ci_cpu
-def test_omnidreams_native_vae_perf_config_is_opt_in() -> None:
-    from omnidreams.config import (
-        OMNIDREAMS_CONFIGS,
-        SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_NATIVE_PERF,
-        SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_PERF,
-    )
-
-    native = SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_NATIVE_PERF
-    baseline = SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_PERF
-
-    assert native.name in OMNIDREAMS_CONFIGS
-    assert isinstance(baseline.encoder, OmnidreamsWanVAEEncoderConfig)
-    assert isinstance(native.encoder, OmnidreamsWanVAEEncoderConfig)
-    assert baseline.decoder is not None
-    assert native.decoder is not None
-    assert baseline.encoder.native_vae_acceleration == "disabled"
-    assert native.encoder.native_vae_acceleration == "required"
-    assert native.encoder.native_vae_backend == "fp8"
-    assert native.encoder.dtype is torch.float16
-    assert type(native.decoder) is type(baseline.decoder)
-    assert not hasattr(native.decoder, "native_vae_acceleration")
-    assert getattr(native.decoder, "dtype") == getattr(baseline.decoder, "dtype")
-    assert getattr(native.decoder, "use_compile") == getattr(
-        baseline.decoder, "use_compile"
-    )
-    assert getattr(native.decoder, "use_cuda_graph") == getattr(
-        baseline.decoder, "use_cuda_graph"
-    )
-
-
-@pytest.mark.ci_cpu
 def test_native_vae_path_does_not_keep_stale_extension_names() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     paths = [

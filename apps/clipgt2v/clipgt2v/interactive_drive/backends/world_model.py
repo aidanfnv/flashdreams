@@ -11,6 +11,8 @@ from typing import Any
 
 import numpy as np
 from loguru import logger
+from PIL import Image
+
 from clipgt2v.interactive_drive.backends.base import RenderBackend
 from clipgt2v.interactive_drive.config import (
     BevConfig,
@@ -27,8 +29,6 @@ from clipgt2v.interactive_drive.types import (
     TrajectoryChunk,
     VideoModelTimings,
 )
-from PIL import Image
-
 from flashdreams.infra.acceleration.prewarm import run_timed_prewarm
 from flashdreams.infra.postprocess import VideoPostprocessChainConfig
 
@@ -39,7 +39,7 @@ WorldModelSessionFactory = Callable[..., Any]
 class WorldModelRenderBackend(RenderBackend):
     def __init__(
         self,
-        manifest: Any,
+        model_config: Any,
         chunk: ChunkConfig,
         raster: RasterConfig,
         profile: WorldModelProfileConfig | None = None,
@@ -54,7 +54,7 @@ class WorldModelRenderBackend(RenderBackend):
             raise ValueError(
                 "A model integration must provide a world-model session factory."
             )
-        self._manifest = manifest
+        self._model_config = model_config
         vehicle = vehicle or VehicleConfig()
         self._rasterizer = LudusConditionRasterizer(
             raster,
@@ -67,7 +67,7 @@ class WorldModelRenderBackend(RenderBackend):
             max_chunk_frames=max(chunk.initial_chunk_frames, chunk.chunk_frames),
         )
         self._session = session_factory(
-            manifest,
+            model_config,
             profile=profile,
             offload_text_encoder=offload_text_encoder,
             postprocess=postprocess,
@@ -87,19 +87,19 @@ class WorldModelRenderBackend(RenderBackend):
         return True
 
     def warmup_model(self) -> None:
-        if self._manifest.resolution_wh != self._raster.resolution_wh:
+        if self._model_config.resolution_wh != self._raster.resolution_wh:
             raise ValueError(
-                "World-model manifest resolution does not match the renderer resolution: "
-                f"{self._manifest.resolution_wh} vs {self._raster.resolution_wh}"
+                "World-model config resolution does not match the renderer resolution: "
+                f"{self._model_config.resolution_wh} vs {self._raster.resolution_wh}"
             )
-        if self._manifest.fps != self._chunk.fps:
+        if self._model_config.fps != self._chunk.fps:
             raise ValueError(
-                f"World-model manifest fps {self._manifest.fps} does not match chunk fps {self._chunk.fps}"
+                f"World-model config fps {self._model_config.fps} does not match chunk fps {self._chunk.fps}"
             )
-        if self._manifest.num_frames_per_block != self._chunk.chunk_frames:
+        if self._model_config.num_frames_per_block != self._chunk.chunk_frames:
             raise ValueError(
-                "World-model manifest num_frames_per_block does not match steady-state chunk size: "
-                f"{self._manifest.num_frames_per_block} vs {self._chunk.chunk_frames}"
+                "World-model config num_frames_per_block does not match steady-state chunk size: "
+                f"{self._model_config.num_frames_per_block} vs {self._chunk.chunk_frames}"
             )
         if self._chunk.initial_chunk_frames != 5:
             raise ValueError(
@@ -117,7 +117,7 @@ class WorldModelRenderBackend(RenderBackend):
         self._scene = scene
         self._next_chunk_count = 0
         self._debug_first_chunk_condition_frames = self._load_debug_condition_frames(
-            self._manifest.debug_condition_frame_dir
+            self._model_config.debug_condition_frame_dir
         )
         load_start = time.perf_counter()
         self._rasterizer.load_scene(scene)
@@ -189,7 +189,7 @@ class WorldModelRenderBackend(RenderBackend):
             )
             logger.info(
                 "[world-model] first_chunk using official hdmap override "
-                f"dir={self._manifest.debug_condition_frame_dir}",
+                f"dir={self._model_config.debug_condition_frame_dir}",
             )
         _log_prompt_handoff("first_chunk.start", scene)
         model_frames = self._session.start(
@@ -324,9 +324,10 @@ class WorldModelRenderBackend(RenderBackend):
                 )
             with Image.open(path) as image:
                 rgb = image.convert("RGB")
-                if rgb.size != self._manifest.resolution_wh:
+                if rgb.size != self._model_config.resolution_wh:
                     rgb = rgb.resize(
-                        self._manifest.resolution_wh, resample=Image.Resampling.BILINEAR
+                        self._model_config.resolution_wh,
+                        resample=Image.Resampling.BILINEAR,
                     )
                 frames.append(np.array(rgb, dtype=np.uint8))
         return tuple(frames)

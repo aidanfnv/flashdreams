@@ -5,8 +5,8 @@ from .app import (
     InteractiveDriveSceneOption,
     InteractiveDriveSession,
     InteractiveDriveUILoop,
-    resolve_bundled_world_model_manifest,
 )
+from .config import InteractiveDriveConfig
 from .scene_download import (
     DEFAULT_SCENE_FILENAME,
     DEFAULT_SCENE_REPO_ID,
@@ -19,9 +19,9 @@ __all__ = [
     "DEFAULT_SCENE_REPO_ID",
     "DEFAULT_SCENE_UUID",
     "InteractiveDriveApplication",
+    "InteractiveDriveConfig",
     "InteractiveDriveSceneOption",
     "InteractiveDriveSession",
     "InteractiveDriveUILoop",
     "download_default_scene",
-    "resolve_bundled_world_model_manifest",
 ]

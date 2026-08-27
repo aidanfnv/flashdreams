@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import torch
-from omnidreams.config import SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_PERF
+from omnidreams.config import OMNIDREAMS_PIPELINE_CONFIG
 from omnidreams.impl.pipeline import OmnidreamsPipeline
 from omnidreams.runner import DEFAULT_VIDEO_HEIGHT, DEFAULT_VIDEO_WIDTH
 from omnidreams.impl.transformer import CosmosTransformer, CosmosTransformerConfig
@@ -104,7 +104,7 @@ def _run_full_pipeline_benchmark(
     native_backend = case.native_dit_backend if native_dit else "bf16"
     native_attention = case.native_attention_backend if native_dit else "auto"
     pipeline_config = derive_config(
-        SV_2STEPS_CHUNK2_LOC6_LIGHTVAE_LIGHTTAE_PERF,
+        OMNIDREAMS_PIPELINE_CONFIG,
         name=f"omnidreams-full-pipeline-{case.pytest_id}-benchmark",
         text_encoder=None,
         image_encoder=None,

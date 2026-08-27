@@ -20,8 +20,5 @@ flashdreams-clipgt2v-v2 = { workspace = true }
 [tool.setuptools.packages.find]
 include = ["interactive_drive*"]
 
-[tool.setuptools.package-data]
-interactive_drive = ["configs/*.yaml"]
-
 [tool.uv]
 managed = true

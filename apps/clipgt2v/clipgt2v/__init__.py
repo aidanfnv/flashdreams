@@ -4,10 +4,12 @@ from .app import (
     ClipGT2VApplication,
     ClipGT2VApplicationDefaults,
     ClipGT2VApplicationHooks,
+    ClipGT2VConfig,
 )
 
 __all__ = [
     "ClipGT2VApplication",
     "ClipGT2VApplicationDefaults",
     "ClipGT2VApplicationHooks",
+    "ClipGT2VConfig",
 ]
