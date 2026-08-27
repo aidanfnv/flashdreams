@@ -47,10 +47,8 @@ optional and follow the `--` separator:
 | `--game-mode` | Enable the speed limit and collisions with scene actors and static map geometry. |
 | `--postprocess-preset NAME` | Start with a registered video post-processing preset enabled. Default: none. |
 | `--world-model-profile` | Enable synchronized world-model profiling. |
-| `--world-model-offload-text-encoder` | Release text/image encoders after preparing scene conditioning. |
 | `--world-model-device DEVICE` | Select the model device. Default: `cuda:0`. |
 | `--world-model-seed N` | Pin the seed used for each rollout. |
-| `--world-model-synthetic` | Use synthetic model assets for development checks. |
 | `--world-model-debug-condition-frame-dir PATH` | Override first-chunk condition frames for debugging. |
 
 For example, use a local scene, select its rain variant, override its prompt,

@@ -14,7 +14,7 @@ import pytest
 import torch
 from clipgt2v.app import (
     ClipGT2VApplication,
-    ClipGT2VApplicationHooks,
+    ClipGT2VApplicationDefaults,
     ClipGT2VModelLoop,
     ClipGT2VModelState,
     DriveTelemetry,
@@ -225,6 +225,7 @@ def test_clipgt2v_no_ui_registers_only_the_model_loop(tmp_path: Path) -> None:
 
 def test_interactive_drive_resolves_default_scene_when_omitted(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scene = tmp_path / "default.usdz"
     scene.touch()
@@ -234,7 +235,12 @@ def test_interactive_drive_resolves_default_scene_when_omitted(
         calls.append(None)
         return scene
 
-    app = InteractiveDriveApplication(default_scene_resolver=resolve_default_scene)
+    monkeypatch.setattr(
+        clipgt_app_module,
+        "download_default_scene",
+        resolve_default_scene,
+    )
+    app = InteractiveDriveApplication()
     app.init(["--backend", "raster", "--total-blocks", "0"])
 
     assert calls == [None]
@@ -267,15 +273,21 @@ def test_world_model_accepts_postprocess_preset(
         "discover_postprocess_presets",
         lambda: {"example-preset": object()},
     )
-    hooks = ClipGT2VApplicationHooks(
-        backend_factory=lambda config: config,
-    )
     app = InteractiveDriveApplication(
-        hooks=hooks,
-        default_scene_resolver=lambda: scene,
+        defaults=ClipGT2VApplicationDefaults(
+            backend="world_model",
+            pipeline_config=cast(Any, object()),
+        ),
     )
 
-    app.init(["--postprocess-preset", "example-preset"])
+    app.init(
+        [
+            "--scene",
+            str(scene),
+            "--postprocess-preset",
+            "example-preset",
+        ]
+    )
 
     assert app._config is not None
     assert isinstance(app._config, InteractiveDriveConfig)
@@ -312,7 +324,11 @@ def test_standalone_application_downloads_default_scene(
         calls.append(None)
         return scene
 
-    monkeypatch.setattr(app_module, "download_default_scene", fake_default_scene)
+    monkeypatch.setattr(
+        clipgt_app_module,
+        "download_default_scene",
+        fake_default_scene,
+    )
     app = InteractiveDriveApplication()
 
     app.init(["--backend", "raster", "--total-blocks", "0"])
@@ -322,14 +338,22 @@ def test_standalone_application_downloads_default_scene(
     assert app._config.app.scene_path == scene
 
 
-def test_interactive_drive_prefers_explicit_scene(tmp_path: Path) -> None:
+def test_interactive_drive_prefers_explicit_scene(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     scene = tmp_path / "local.usdz"
     scene.touch()
 
     def unexpected_default_scene() -> Path:
         raise AssertionError("default scene should not be resolved")
 
-    app = InteractiveDriveApplication(default_scene_resolver=unexpected_default_scene)
+    monkeypatch.setattr(
+        clipgt_app_module,
+        "download_default_scene",
+        unexpected_default_scene,
+    )
+    app = InteractiveDriveApplication()
     app.init(["--scene", str(scene), "--backend", "raster"])
 
     assert app._config is not None

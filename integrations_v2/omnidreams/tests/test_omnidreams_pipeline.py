@@ -371,20 +371,20 @@ def test_omnidreams_streaming_inference():
     cache = pipeline.initialize_cache(text=text, image=image)
 
     autoregressive_index = 0
-    num_frames = pipeline.get_num_frames(autoregressive_index)
+    num_frames = pipeline.get_num_output_frames(autoregressive_index)
     hdmap = torch.randn(
         1, num_views, num_frames, 3, height, width, device=device, dtype=dtype
     )
-    decoded_video = pipeline.generate(autoregressive_index, hdmap=hdmap, cache=cache)
+    decoded_video = pipeline.generate(autoregressive_index, input=hdmap, cache=cache)
     pipeline.finalize(autoregressive_index, cache=cache)
     assert decoded_video.shape == hdmap.shape
 
     autoregressive_index = 1
-    num_frames = pipeline.get_num_frames(autoregressive_index)
+    num_frames = pipeline.get_num_output_frames(autoregressive_index)
     hdmap = torch.randn(
         1, num_views, num_frames, 3, height, width, device=device, dtype=dtype
     )
-    decoded_video = pipeline.generate(autoregressive_index, hdmap=hdmap, cache=cache)
+    decoded_video = pipeline.generate(autoregressive_index, input=hdmap, cache=cache)
     pipeline.finalize(autoregressive_index, cache=cache)
     assert decoded_video.shape == hdmap.shape
 

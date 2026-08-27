@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Hugging Face scene download defaults for Interactive Drive."""
+"""Default scene used by the driving applications."""
 
 from __future__ import annotations
 
@@ -22,23 +22,23 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SCENE_UUID = "0d404ff7-2b66-498c-b047-1ed8cded60d4"
-"""Scene UUID used by the original Interactive Drive demo."""
+"""Scene UUID used by the driving applications."""
 
 DEFAULT_SCENE_REPO_ID = "nvidia/omni-dreams-scenes"
-"""Gated Hugging Face dataset containing the default USDZ archive."""
+"""Hugging Face dataset containing the default scene."""
 
 DEFAULT_SCENE_FILENAME = f"scenes/clipgt-{DEFAULT_SCENE_UUID}.usdz"
-"""Dataset-relative path of the clear-weather default scene."""
+"""Dataset-relative path of the default scene archive."""
 
 
 def download_default_scene(
     download: Callable[..., Any] | None = None,
 ) -> Path:
-    """Download the default USDZ scene from the OmniDreams dataset.
+    """Download the driving applications' built-in default USDZ scene.
 
     Args:
         download: Hugging Face download callable; ``None`` imports
-            :func:`huggingface_hub.hf_hub_download` lazily.
+            ``hf_hub_download`` lazily.
 
     Returns:
         Local Hugging Face cache path for the scene archive.
@@ -51,7 +51,7 @@ def download_default_scene(
             from huggingface_hub import hf_hub_download
         except ImportError as error:
             raise RuntimeError(
-                "The default Interactive Drive scene requires huggingface-hub."
+                "The default driving scene requires huggingface-hub."
             ) from error
         download = hf_hub_download
     return Path(

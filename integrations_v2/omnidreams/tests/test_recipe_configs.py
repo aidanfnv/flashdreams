@@ -57,6 +57,16 @@ def test_application_defaults_are_owned_by_each_adapter() -> None:
     assert OMNIDREAMS_INTERACTIVE_DRIVE_PERF_DEFAULTS.slug == "interactive-drive-perf"
     assert OMNIDREAMS_INTERACTIVE_DRIVE_DEFAULTS.width == 1280
     assert OMNIDREAMS_INTERACTIVE_DRIVE_PERF_DEFAULTS.width == 1168
+    for defaults, pipeline_config in (
+        (OMNIDREAMS_APPLICATION_DEFAULTS, OMNIDREAMS_PIPELINE_CONFIG),
+        (OMNIDREAMS_PERF_APPLICATION_DEFAULTS, OMNIDREAMS_PERF_PIPELINE_CONFIG),
+        (OMNIDREAMS_INTERACTIVE_DRIVE_DEFAULTS, OMNIDREAMS_PIPELINE_CONFIG),
+        (
+            OMNIDREAMS_INTERACTIVE_DRIVE_PERF_DEFAULTS,
+            OMNIDREAMS_PERF_PIPELINE_CONFIG,
+        ),
+    ):
+        assert defaults.pipeline_config is pipeline_config
 
 
 @pytest.mark.parametrize(

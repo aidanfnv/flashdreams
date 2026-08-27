@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from importlib import resources
 from pathlib import Path
@@ -17,7 +17,6 @@ from clipgt2v.app import (
     BackendFactory,
     ClipGT2VApplication,
     ClipGT2VApplicationDefaults,
-    ClipGT2VApplicationHooks,
     ClipGT2VConfig,
     ClipGT2VModelLoop,
     ClipGT2VModelState,
@@ -37,7 +36,6 @@ from flashdreams.runtime_v2.user_input_events import UserInputEvents
 from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
 from .config import InteractiveDriveConfig
-from .scene_download import download_default_scene
 
 _SCENE_STEM = re.compile(r"^clipgt-(?P<uuid>[0-9a-fA-F-]{36})(?:-(?P<variant>.+))?$")
 
@@ -367,10 +365,7 @@ class InteractiveDriveApplication(ClipGT2VApplication):
     def __init__(
         self,
         *,
-        hooks: ClipGT2VApplicationHooks | None = None,
-        backend_factory: BackendFactory | None = None,
         scene_loader: SceneLoader = load_scene_bundle,
-        default_scene_resolver: Callable[[], Path] | None = None,
         scene_options: Sequence[InteractiveDriveSceneOption] = (),
         defaults: ClipGT2VApplicationDefaults | None = None,
     ) -> None:
@@ -379,13 +374,9 @@ class InteractiveDriveApplication(ClipGT2VApplication):
             or ClipGT2VApplicationDefaults(
                 title="Interactive Drive",
                 slug="interactive-drive",
-                backend="world_model" if hooks is not None else "raster",
                 total_blocks=0,
             ),
-            hooks=hooks,
-            backend_factory=backend_factory,
             scene_loader=scene_loader,
-            default_scene_resolver=default_scene_resolver or download_default_scene,
         )
         self._interactive_scene_options = tuple(scene_options)
 

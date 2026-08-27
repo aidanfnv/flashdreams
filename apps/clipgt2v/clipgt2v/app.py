@@ -9,6 +9,7 @@ import argparse
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,6 +19,9 @@ from torch import Tensor
 
 from clipgt2v.interactive_drive.backends.base import RenderBackend
 from clipgt2v.interactive_drive.backends.raster import RasterRenderBackend
+from clipgt2v.interactive_drive.backends.world_model import (
+    WorldModelRenderBackend,
+)
 from clipgt2v.interactive_drive.config import (
     AppConfig,
     BevConfig,
@@ -27,6 +31,7 @@ from clipgt2v.interactive_drive.config import (
     WorldModelProfileConfig,
 )
 from clipgt2v.interactive_drive.input.keyboard import command_from_snapshot
+from clipgt2v.interactive_drive.scene_download import download_default_scene
 from clipgt2v.interactive_drive.scene_loader import load_scene_bundle
 from clipgt2v.interactive_drive.simulation.ego_vehicle_kinematics import (
     build_ground_snapper,
@@ -44,6 +49,8 @@ from clipgt2v.interactive_drive.types import (
 from flashdreams.api_v2.application import IApplication
 from flashdreams.api_v2.loop import IModelLoop, IUILoop, invoke_async
 from flashdreams.api_v2.session import ISession
+from flashdreams.infra.config import derive_config
+from flashdreams.infra.pipeline import StreamInferencePipelineConfig
 from flashdreams.infra.postprocess import VideoPostprocessChainConfig
 from flashdreams.plugins.registry import discover_postprocess_presets
 from flashdreams.runtime_v2.session_desc import SessionDesc
@@ -60,7 +67,6 @@ from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
 BackendFactory = Callable[[AppConfig], RenderBackend]
 SceneLoader = Callable[..., SceneBundle]
-SceneResolver = Callable[[], Path]
 ViewMode = Literal["rgb", "hdmap", "physx"]
 
 _VIEW_MODES: tuple[ViewMode, ...] = ("rgb", "hdmap", "physx")
@@ -87,13 +93,8 @@ class ClipGT2VApplicationDefaults:
     width: int = 1280
     height: int = 704
 
-
-@dataclass(frozen=True, slots=True)
-class ClipGT2VApplicationHooks:
-    """Model-owned callables consumed by the scene-driving application."""
-
-    backend_factory: BackendFactory
-    """Create the selected render backend on the model thread."""
+    pipeline_config: StreamInferencePipelineConfig | None = None
+    """Model-owned streaming inference pipeline configuration."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -565,13 +566,9 @@ class ClipGT2VApplication(IApplication):
         self,
         *,
         defaults: ClipGT2VApplicationDefaults | None = None,
-        hooks: ClipGT2VApplicationHooks | None = None,
-        backend_factory: BackendFactory | None = None,
         scene_loader: SceneLoader = load_scene_bundle,
-        default_scene_resolver: SceneResolver | None = None,
     ) -> None:
         defaults = defaults or ClipGT2VApplicationDefaults()
-        hooks = hooks or ClipGT2VApplicationHooks(backend_factory=_build_backend)
         self._title = defaults.title
         self._slug = defaults.slug
         self._default_backend = defaults.backend
@@ -579,10 +576,11 @@ class ClipGT2VApplication(IApplication):
         self._default_fps = defaults.fps
         self._default_width = defaults.width
         self._default_height = defaults.height
-        self._hooks = hooks
-        self._backend_factory = backend_factory or hooks.backend_factory
+        self._backend_factory = partial(
+            _build_backend,
+            pipeline_config=defaults.pipeline_config,
+        )
         self._scene_loader = scene_loader
-        self._default_scene_resolver = default_scene_resolver
         self._config: ClipGT2VConfig | None = None
         self._desc = SessionDesc(
             output_layout=VideoTensorLayout.tchw,
@@ -597,12 +595,9 @@ class ClipGT2VApplication(IApplication):
         parser.add_argument(
             "--scene",
             type=Path,
-            required=self._default_scene_resolver is None,
             help=(
-                "Local USDZ scene. If omitted, download the default scene from "
-                "Hugging Face."
-                if self._default_scene_resolver is not None
-                else "Local USDZ scene."
+                "Local USDZ scene. If omitted, download the built-in default "
+                "scene from Hugging Face."
             ),
         )
         parser.add_argument(
@@ -642,14 +637,8 @@ class ClipGT2VApplication(IApplication):
             action="store_true",
             help="Enable synchronized world-model profiling.",
         )
-        parser.add_argument(
-            "--world-model-offload-text-encoder",
-            action="store_true",
-            help="Release text/image encoders after preparing scene conditioning.",
-        )
         parser.add_argument("--world-model-device", default="cuda:0")
         parser.add_argument("--world-model-seed", type=int)
-        parser.add_argument("--world-model-synthetic", action="store_true")
         parser.add_argument(
             "--world-model-debug-condition-frame-dir",
             type=Path,
@@ -657,8 +646,7 @@ class ClipGT2VApplication(IApplication):
         args = parser.parse_args(list(commandline_args))
         scene = args.scene
         if scene is None:
-            assert self._default_scene_resolver is not None
-            scene = self._default_scene_resolver()
+            scene = download_default_scene()
         if not scene.is_file():
             raise FileNotFoundError(scene)
         if args.total_blocks < 0:
@@ -679,10 +667,8 @@ class ClipGT2VApplication(IApplication):
             world_model_profile=WorldModelProfileConfig(
                 enabled=args.world_model_profile
             ),
-            world_model_offload_text_encoder=(args.world_model_offload_text_encoder),
             world_model_device=args.world_model_device,
             world_model_seed=args.world_model_seed,
-            world_model_synthetic=args.world_model_synthetic,
             world_model_debug_condition_frame_dir=(
                 args.world_model_debug_condition_frame_dir
             ),
@@ -725,7 +711,11 @@ class ClipGT2VApplication(IApplication):
         return
 
 
-def _build_backend(config: AppConfig) -> RenderBackend:
+def _build_backend(
+    config: AppConfig,
+    *,
+    pipeline_config: StreamInferencePipelineConfig | None,
+) -> RenderBackend:
     if config.backend == "raster":
         return RasterRenderBackend(
             config.chunk,
@@ -733,8 +723,32 @@ def _build_backend(config: AppConfig) -> RenderBackend:
             bev=config.bev,
             vehicle=config.vehicle,
         )
-    raise ValueError(
-        "The model integration must provide a backend factory for model rendering."
+    if pipeline_config is None:
+        raise ValueError(
+            "The application defaults must provide pipeline_config for model rendering."
+        )
+    resolved_pipeline_config = derive_config(
+        pipeline_config,
+        enable_sync_and_profile=config.world_model_profile.enabled,
+        diffusion_model=dict(
+            seed=(42 if config.world_model_seed is None else config.world_model_seed)
+        ),
+    )
+    pipeline = (
+        resolved_pipeline_config.setup()
+        .to(torch.device(config.world_model_device))
+        .eval()
+    )
+    if config.world_model_seed is None:
+        pipeline.diffusion_model.config.seed = None
+    return WorldModelRenderBackend(
+        pipeline=pipeline,
+        chunk=config.chunk,
+        raster=config.raster,
+        bev=config.bev,
+        vehicle=config.vehicle,
+        postprocess=config.postprocess,
+        debug_condition_frame_dir=config.world_model_debug_condition_frame_dir,
     )
 
 
@@ -808,13 +822,11 @@ __all__ = [
     "BackendFactory",
     "ClipGT2VApplication",
     "ClipGT2VApplicationDefaults",
-    "ClipGT2VApplicationHooks",
     "ClipGT2VConfig",
     "ClipGT2VModelLoop",
     "ClipGT2VModelState",
     "ClipGT2VUILoop",
     "DriveTelemetry",
     "SceneLoader",
-    "SceneResolver",
     "ViewMode",
 ]

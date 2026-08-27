@@ -133,9 +133,9 @@ class OmnidreamsPipeline(
             image=first_frames,
             view_names=["camera_front_..."],
         )
-        chunk = pipeline.generate(0, cache, hdmap=hdmap_chunk_0)
+        chunk = pipeline.generate(0, cache, input=hdmap_chunk_0)
         pipeline.finalize(0, cache)
-        chunk = pipeline.generate(1, cache, hdmap=hdmap_chunk_1)
+        chunk = pipeline.generate(1, cache, input=hdmap_chunk_1)
         pipeline.finalize(1, cache)  # optional for the last rollout
     """
 
@@ -401,31 +401,32 @@ class OmnidreamsPipeline(
         self,
         autoregressive_index: int,
         cache: OmnidreamsPipelineCache,
-        hdmap: Tensor,
+        input: Tensor,
     ) -> Tensor:
         """Generate one decoded video chunk.
 
         Args:
             autoregressive_index: AR step index (0-based).
             cache: Per-rollout cache from ``initialize_cache``.
-            hdmap: Per-AR-step HDMap pixels ``[B, V, T, 3, H, W]`` in
-                ``[-1, 1]``. ``T`` must equal ``get_num_frames(autoregressive_index)``.
+            input: Per-AR-step control pixels ``[B, V, T, 3, H, W]`` in
+                ``[-1, 1]``. ``T`` must equal
+                ``get_num_output_frames(autoregressive_index)``.
 
         Returns:
             Decoded video chunk ``[B, V, T, 3, H, W]`` in ``[-1, 1]``.
         """
-        hdmap = split_inputs_cp(hdmap, seq_dim=1, cp_group=self.V_group)
+        input = split_inputs_cp(input, seq_dim=1, cp_group=self.V_group)
 
         output = super().generate(
             autoregressive_index=autoregressive_index,
             cache=cache,
-            input=hdmap,
+            input=input,
         )
 
         output = cat_outputs_cp(output, seq_dim=1, cp_group=self.V_group)
         return output
 
-    def get_num_frames(self, autoregressive_index: int) -> int:
+    def get_num_output_frames(self, autoregressive_index: int) -> int:
         """Number of decoded video frames produced at this AR step."""
         if autoregressive_index == 0:
             return 1 + (self._len_t_latent - 1) * self._decoder_temporal_compression

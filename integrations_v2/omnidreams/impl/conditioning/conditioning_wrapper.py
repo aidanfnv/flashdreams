@@ -445,7 +445,7 @@ class OmnidreamsConditioningWrapper(nn.Module):
         )
         rgb_frames = self.pipeline.generate(
             autoregressive_index=0,
-            hdmap=condition,
+            input=condition,
             cache=pipeline_cache,
         )
         rgb_frames = self._to_uint8(rgb_frames).contiguous()
@@ -533,7 +533,7 @@ class OmnidreamsConditioningWrapper(nn.Module):
             del text_prompts  # Pipeline currently keeps prompts from initialize_cache.
             rgb_frames = self.pipeline.generate(
                 autoregressive_index=block_idx,
-                hdmap=condition,
+                input=condition,
                 cache=state.pipeline_cache,
             )
             rgb_frames = self._to_uint8(rgb_frames).contiguous()
