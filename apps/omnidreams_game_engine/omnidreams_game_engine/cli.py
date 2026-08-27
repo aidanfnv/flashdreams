@@ -21,10 +21,9 @@ from omnidreams_game_engine.backends.world_model import WorldModelRenderBackend
 from omnidreams_game_engine.cli_args import ExplicitArgTrackingArgumentParser
 from omnidreams_game_engine.config import (
     AppConfig,
-    BevConfig,
-    RasterConfig,
     WorldModelProfileConfig,
 )
+from omnidreams_game_engine.engine_settings import engine_settings_from_args
 from omnidreams_game_engine.log import configure_logging
 from omnidreams_game_engine.world_model.manifest import (
     load_world_model_manifest,
@@ -62,7 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--force-map-recompile",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help="Rebuild each selected map's compiled cache once in this process.",
     )
     # ``--backend`` exists primarily for the test suite, which exercises
@@ -95,6 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Omnidreams pipeline manifest (YAML). Accepts a path or a bundled "
             "config filename such as example_world_model_perf.yaml."
         ),
+    )
+    parser.add_argument(
+        "--engine-config",
+        type=Path,
+        default=None,
+        help="Optional partial engine YAML. Explicit CLI values override it.",
     )
     parser.add_argument(
         "--synthetic-model",
@@ -202,17 +208,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--disable-visual-flare",
-        action="store_true",
-        help=(
-            "Disable the strong full-screen dark fade that signals a collision "
-            "when --game-mode is enabled."
-        ),
+        "--visual-flare",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=("Enable or disable the full-screen collision visual flare."),
     )
     parser.add_argument(
         "--bev",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help=(
             "Render a synthetic top-down BEV map alongside the main camera and"
             " publish it on /bev_stream. The default is a straight-down,"
@@ -222,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--bev-resolution",
-        default="1024x1024",
+        default=None,
         help=(
             "BEV render resolution as WIDTHxHEIGHT (default: 1024x1024). The"
             " HUD panel is roughly 470x400, so 1024 gives ~2x SSAA per axis"
@@ -234,19 +238,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--bev-height-m",
         type=float,
-        default=BevConfig().height_m,
+        default=None,
         help="BEV camera altitude in metres above the rig.",
     )
     parser.add_argument(
         "--bev-fov-deg",
         type=float,
-        default=BevConfig().fov_deg,
+        default=None,
         help="BEV camera vertical field-of-view in degrees.",
     )
     parser.add_argument(
         "--bev-tilt-deg",
         type=float,
-        default=BevConfig().tilt_deg,
+        default=None,
         help=(
             "Advanced override for the BEV camera pitch in degrees. The"
             " default ``0`` keeps the mini-map straight down; positive values"
@@ -255,21 +259,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     return parser
-
-
-def _parse_resolution(value: str) -> tuple[int, int]:
-    parts = value.lower().split("x")
-    if len(parts) != 2:
-        raise SystemExit(f"--bev-resolution expected WIDTHxHEIGHT, got {value!r}")
-    try:
-        width, height = int(parts[0]), int(parts[1])
-    except ValueError as exc:
-        raise SystemExit(
-            f"--bev-resolution components must be integers: {value!r}"
-        ) from exc
-    if width <= 0 or height <= 0:
-        raise SystemExit(f"--bev-resolution must be positive: {value!r}")
-    return width, height
 
 
 def main() -> None:
@@ -291,6 +280,7 @@ def prepare_config_and_backend(
     hand it to a long-lived :class:`InteractiveDriveApp` that switches scenes in
     place (keeping the warmed model resident).
     """
+    engine_settings = engine_settings_from_args(args)
     # Stamp the resolved HF org before manifest and model artifact resolution.
     resolved_org = apply_cli_to_env(args.hf_org)
     if resolved_org != DEFAULT_HF_ORG:
@@ -302,15 +292,7 @@ def prepare_config_and_backend(
     if scene_path is None:
         raise SystemExit("--map is required")
 
-    bev_width, bev_height = _parse_resolution(args.bev_resolution)
-    bev_config = BevConfig(
-        enabled=bool(args.bev),
-        width=bev_width,
-        height=bev_height,
-        height_m=float(args.bev_height_m),
-        fov_deg=float(args.bev_fov_deg),
-        tilt_deg=float(args.bev_tilt_deg),
-    )
+    bev_config = engine_settings.rendering.bev
     manifest_path = (
         resolve_manifest_path(args.manifest) if args.manifest is not None else None
     )
@@ -323,10 +305,7 @@ def prepare_config_and_backend(
         prompt_override=args.prompt,
         force_map_recompile=bool(args.force_map_recompile),
         manifest_path=manifest_path,
-        raster=RasterConfig(
-            compute_device=args.compute_device,
-            sync_gpu_timing=args.sync_gpu_timing,
-        ),
+        raster=engine_settings.rendering.raster,
         world_model_profile=WorldModelProfileConfig(
             enabled=bool(args.profile_world_model),
         ),
@@ -336,7 +315,7 @@ def prepare_config_and_backend(
         game_mode=bool(args.game_mode),
         stream_mjpeg_bind=args.stream_mjpeg,
         stop_after_consumed_chunks=args.stop_after_chunks,
-        visual_flare_enabled=False if args.disable_visual_flare else None,
+        visual_flare_enabled=args.visual_flare,
     )
 
     backend: RenderBackend

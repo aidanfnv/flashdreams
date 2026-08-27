@@ -50,10 +50,9 @@ from crazy_robotaxi.game import (
     TaxiGameConfig,
     TaxiGameController,
 )
-from crazy_robotaxi.game_settings import load_game_settings
+from crazy_robotaxi.game_settings import game_settings_from_args
 from crazy_robotaxi.high_scores import (
     RaceTimeStore,
-    default_high_scores_path,
     default_race_times_path,
 )
 from crazy_robotaxi.input import (
@@ -493,22 +492,7 @@ class CrazyRobotaxiApp(InteractiveDriveApp):
 
 def taxi_config_from_args(args: argparse.Namespace) -> TaxiGameConfig:
     """Build Taxi-only configuration at the application composition root."""
-    high_scores_path = (
-        args.taxi_highscores.expanduser()
-        if args.taxi_highscores is not None
-        else default_high_scores_path()
-    )
-    config = getattr(args, "_game_settings", None) or load_game_settings(
-        args.game_config
-    )
-    return replace(
-        config,
-        seed=None if args.taxi_seed is None else int(args.taxi_seed),
-        high_scores_path=high_scores_path,
-        alignment_diagnostics_enabled=(
-            getattr(args, "taxi_alignment_diagnostics", None) is not None
-        ),
-    )
+    return game_settings_from_args(args).taxi_game
 
 
 def _build_taxi_ground_snapper(

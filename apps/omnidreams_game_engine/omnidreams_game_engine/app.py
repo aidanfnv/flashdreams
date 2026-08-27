@@ -132,7 +132,7 @@ class InteractiveDriveApp:
         # scene's own initial frame is available).
         self._loading_base_rgb: np.ndarray | None = None
         # Optional parsed-scene cache, keyed by (path, variant, prompt).
-        # Disabled unless --preload-scenes opts in via preload_scenes(); when
+        # Disabled unless --preload-maps opts in via preload_scenes(); when
         # enabled, load_scene reuses parsed bundles so switching to a
         # preloaded (or previously-visited) scene skips the USDZ parse.
         self._cache_scenes = False
@@ -146,7 +146,7 @@ class InteractiveDriveApp:
         self._geometry_cache: dict[str, tuple[SceneBundle, GroundSnapper | None]] = {}
         self._forced_map_recompiles: set[Path] = set()
         self._scene_cache_lock = threading.Lock()
-        # Set while --preload-scenes is still parsing scenes in the
+        # Set while --preload-maps is still parsing maps in the
         # background; the presenter locks scene selection until it clears so
         # the user always gets the instant (cache-hit) switch.
         self._preload_started = False
@@ -261,7 +261,7 @@ class InteractiveDriveApp:
         """Parse scene bundles in the background so later switches are instant.
 
         ``specs`` is an iterable of ``(scene_path, variant, prompt_override)``.
-        Opt-in (the demo's ``--preload-scenes``); parsing runs sequentially
+        Opt-in (the demo's ``--preload-maps``); parsing runs sequentially
         on one daemon thread to bound peak CPU / memory, populating the cache
         that :meth:`load_scene` consults. Already-cached entries are skipped,
         and failures are logged and skipped so one bad scene doesn't abort the
@@ -286,7 +286,7 @@ class InteractiveDriveApp:
         ).start()
 
     def preload_in_progress(self) -> bool:
-        """True while --preload-scenes is still parsing scenes in the background."""
+        """True while --preload-maps is still parsing maps in the background."""
         return self._preload_started and not self._preload_done.is_set()
 
     def _preload_worker(self, pending: list[tuple[object, str, str | None]]) -> None:
@@ -397,7 +397,7 @@ class InteractiveDriveApp:
     def _cached_geometry(
         self, scene_path: object
     ) -> tuple[SceneBundle, GroundSnapper | None] | None:
-        # Always on, unlike the --preload-scenes-gated ``_scene_cache``: one
+        # Always on, unlike the --preload-maps-gated ``_scene_cache``: one
         # bundle per scene lets a live variant switch re-seed, not re-parse.
         with self._scene_cache_lock:
             return self._geometry_cache.get(str(scene_path))

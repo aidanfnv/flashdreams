@@ -21,7 +21,7 @@ from PIL import Image
 
 from omnidreams_game_engine import cli as _cli
 from omnidreams_game_engine.app import InteractiveDriveApp
-from omnidreams_game_engine.config import BevConfig, RasterConfig
+from omnidreams_game_engine.config import BevConfig
 from omnidreams_game_engine.game_map import (
     GAME_MAP_SUFFIX,
     load_game_map,
@@ -519,7 +519,15 @@ def build_parser() -> argparse.ArgumentParser:
         " centralized ``webrtc`` launch mode."
     )
     parser.add_argument(
+        "--hud",
+        dest="no_hud",
+        action="store_false",
+        default=False,
+        help="Use the native HUD (the default).",
+    )
+    parser.add_argument(
         "--no-hud",
+        dest="no_hud",
         action="store_true",
         help=(
             "Skip the HUD chrome and run the backend with a bare slangpy Vulkan window."
@@ -540,13 +548,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help=(
             "Start loading --map immediately instead of opening the HUD on"
-            " Load Scene. Distinct from --preload-scenes (which only warms the"
+            " Load Scene. Distinct from --preload-maps (which only warms the"
             " parse cache in the background)."
         ),
     )
     parser.add_argument(
         # Deprecated alias for --auto-start; kept so existing scripts/docs
-        # don't break. The old name was easily confused with --preload-scenes.
+        # don't break. The old name was easily confused with --preload-maps.
         "--autoload-scene",
         dest="auto_start",
         action=argparse.BooleanOptionalAction,
@@ -554,7 +562,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
-        "--preload-scenes",
+        "--preload-maps",
+        dest="preload_maps",
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
@@ -613,7 +622,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=argparse.SUPPRESS,
     )
-    parser.add_argument("--no-wheel", action="store_true")
+    parser.add_argument("--wheel", dest="no_wheel", action="store_false", default=False)
+    parser.add_argument("--no-wheel", dest="no_wheel", action="store_true")
     return parser
 
 
@@ -658,6 +668,7 @@ def _coerce_launch_path(key: str, value: object) -> object:
 def _run_namespace(args: argparse.Namespace) -> None:
     """Execute one already-resolved local-window namespace."""
     configure_logging()
+    _cli.engine_settings_from_args(args)
     # ``--stream-mjpeg`` runs through ``_run_streaming`` so the long-lived
     # MJPEG presenter survives scene changes. ``--no-hud`` without MJPEG
     # drops straight through to the bare CLI's Vulkan window.
@@ -719,8 +730,9 @@ def _run_slangpy_hud(args: argparse.Namespace) -> None:
     # ``KeyboardState`` is rebound to the app's real keyboard via
     # ``presenter.bind_keyboard`` in the factory below.
     placeholder_keyboard = KeyboardState()
+    engine_settings = _cli.engine_settings_from_args(args)
     presenter = SlangPyHudPresenter(
-        raster=RasterConfig(),
+        raster=engine_settings.rendering.raster,
         keyboard=placeholder_keyboard,
         args=args,
         scene_options=scene_options,
@@ -759,7 +771,7 @@ def _run_slangpy_hud(args: argparse.Namespace) -> None:
         wheel.start()
         presenter.set_wheel(wheel)
 
-    if args.preload_scenes:
+    if args.preload_maps:
         app.preload_scenes(
             (opt.path, variant, args.prompt)
             for opt in scene_options
@@ -863,8 +875,9 @@ def _run_streaming(args: argparse.Namespace) -> None:
 
     bind_host, bind_port = parse_bind(args.stream_mjpeg)
     placeholder_keyboard = KeyboardState()
+    engine_settings = _cli.engine_settings_from_args(args)
     presenter = MJPEGStreamingPresenter(
-        raster=RasterConfig(),
+        raster=engine_settings.rendering.raster,
         keyboard=placeholder_keyboard,
         bind_host=bind_host,
         bind_port=bind_port,
@@ -884,7 +897,7 @@ def _run_streaming(args: argparse.Namespace) -> None:
     )
     presenter.set_model_status(can_prewarm=app.can_prewarm, ready_probe=app.model_ready)
 
-    if args.preload_scenes:
+    if args.preload_maps:
         app.preload_scenes(
             (opt.path, variant, args.prompt)
             for opt in scene_options

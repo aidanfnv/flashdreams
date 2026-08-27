@@ -371,7 +371,7 @@ class MJPEGStreamingPresenter:
         # reads "Select a scene to begin driving" if never wired.
         self._model_can_prewarm = False
         self._model_ready_probe: Callable[[], bool] = lambda: True
-        # Scene-selection lock (wired by the demo with --preload-scenes).
+        # Map-selection lock (wired by the demo with --preload-maps).
         # While the probe returns True, /scene/select is rejected and the
         # idle frame reads "Preloading scenes..." so the browser can't pick
         # a scene until every scene is cached.
@@ -447,7 +447,7 @@ class MJPEGStreamingPresenter:
         self._model_ready_probe = ready_probe
 
     def set_scene_selection_locked(self, probe: Callable[[], bool]) -> None:
-        """Reject ``/scene/select`` while ``probe()`` returns True (--preload-scenes).
+        """Reject ``/scene/select`` while ``probe()`` returns True (--preload-maps).
 
         Locks scene picking until every scene is cached; idle overlay then
         reads "Preloading scenes...".

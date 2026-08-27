@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from crazy_robotaxi import runtime_cli as cli
+from crazy_robotaxi.cli import build_parser as build_game_parser
 from crazy_robotaxi.runtime_cli import build_parser
 from omnidreams_game_engine.cli import build_parser as build_engine_parser
 from omnidreams_game_engine.cli_args import arg_was_explicit
@@ -79,12 +80,10 @@ def test_game_mode_defaults_to_taxi_and_accepts_named_modes() -> None:
         build_parser().parse_args(["--game-mode"])
 
 
-def test_visual_flare_override_defaults_disabled() -> None:
-    assert build_parser().parse_args([]).disable_visual_flare is False
-    assert (
-        build_parser().parse_args(["--disable-visual-flare"]).disable_visual_flare
-        is True
-    )
+def test_visual_flare_override_is_symmetric() -> None:
+    assert build_parser().parse_args([]).visual_flare is None
+    assert build_parser().parse_args(["--visual-flare"]).visual_flare is True
+    assert build_parser().parse_args(["--no-visual-flare"]).visual_flare is False
 
 
 @pytest.mark.parametrize(
@@ -92,7 +91,7 @@ def test_visual_flare_override_defaults_disabled() -> None:
     [
         ([], False),
         (["--game-mode", "race"], False),
-        (["--game-mode", "race", "--disable-visual-flare"], False),
+        (["--game-mode", "race", "--visual-flare"], True),
     ],
 )
 def test_named_game_modes_keep_base_game_physics_disabled(
@@ -199,3 +198,19 @@ def test_parser_records_explicit_arg_destinations() -> None:
     assert arg_was_explicit(args, "offload_text_encoder")
     assert arg_was_explicit(args, "bev")
     assert not arg_was_explicit(args, "camera")
+
+
+def test_game_presentation_booleans_are_symmetric_and_map_named() -> None:
+    defaults = build_game_parser().parse_args([])
+    disabled = build_game_parser().parse_args(
+        ["--no-hud", "--no-wheel", "--preload-maps"]
+    )
+    enabled = build_game_parser().parse_args(["--hud", "--wheel"])
+
+    assert not defaults.no_hud
+    assert not defaults.no_wheel
+    assert not defaults.preload_maps
+    assert disabled.no_hud and disabled.no_wheel and disabled.preload_maps
+    assert not enabled.no_hud and not enabled.no_wheel
+    with pytest.raises(SystemExit):
+        build_game_parser().parse_args(["--preload-scenes"])

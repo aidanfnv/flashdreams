@@ -817,7 +817,7 @@ class MJPEGStreamingPresenter:
         # wrapper then calls ``acknowledge_scene_change`` and re-enters
         # the long-lived engine with the new scene (model stays resident).
         self._pending_scene_change: tuple[Path, str] | None = None
-        # Map-switching lock (wired by the demo with --preload-scenes).
+        # Map-switching lock (wired by the demo with --preload-maps).
         # While the probe returns True, /scene/select is rejected so the
         # browser cannot switch maps until every map is cached.
         self._scene_selection_locked_probe: Callable[[], bool] = lambda: False
@@ -882,7 +882,7 @@ class MJPEGStreamingPresenter:
         self._pending_scene_change = None
 
     def set_scene_selection_locked(self, probe: Callable[[], bool]) -> None:
-        """Reject ``/scene/select`` while ``probe()`` returns True (--preload-scenes).
+        """Reject ``/scene/select`` while ``probe()`` returns True (--preload-maps).
 
         Locks map switching until every map is cached.
         """

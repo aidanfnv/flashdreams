@@ -19,12 +19,12 @@ from omnidreams_game_engine.config import (
     AppConfig,
     WorldModelProfileConfig,
 )
+from omnidreams_game_engine.engine_settings import (
+    RenderingSettings,
+    engine_settings_from_args,
+)
 from omnidreams_game_engine.game_map import GAME_MAP_SUFFIX, load_game_map_header
 from omnidreams_game_engine.log import configure_logging
-from omnidreams_game_engine.renderer_settings import (
-    RendererSettings,
-    load_renderer_settings,
-)
 from omnidreams_game_engine.world_model.manifest import (
     load_world_model_manifest,
     resolve_world_model_manifest_path,
@@ -34,10 +34,8 @@ from flashdreams.infra.postprocess import VideoPostprocessChainConfig
 from flashdreams.plugins.registry import discover_postprocess_presets
 from flashdreams.serving.realtime.timing import TraceSink
 
-# Package root (from this file's location) so packaged config paths resolve
-# relative to the install, not the user's cwd.
+# Package root for bundled maps and manifests.
 _PACKAGE_ROOT = Path(__file__).resolve().parent
-_CONFIGS_ROOT = _PACKAGE_ROOT / "configs"
 
 
 def resolve_manifest_path(path: str | Path) -> Path:
@@ -49,17 +47,6 @@ def resolve_manifest_path(path: str | Path) -> Path:
     from a workspace root.
     """
     return resolve_world_model_manifest_path(path)
-
-
-def resolve_app_config_path(path: str | Path) -> Path:
-    """Resolve an application config from the working or packaged directory."""
-    candidate = Path(path).expanduser()
-    if candidate.is_file():
-        return candidate.resolve()
-    bundled = _CONFIGS_ROOT / candidate
-    if bundled.is_file():
-        return bundled.resolve()
-    return candidate.resolve()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,7 +63,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--force-map-recompile",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=False,
         help="Rebuild each selected map's compiled cache once in this process.",
     )
     # ``--backend`` exists primarily for the test suite, which exercises
@@ -111,16 +99,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--renderer-config",
+        "--engine-config",
         type=Path,
-        default=_CONFIGS_ROOT / "default_renderer.yaml",
-        help="Complete renderer YAML; defaults to the packaged game renderer.",
+        default=None,
+        help="Optional partial engine YAML. Explicit CLI values override it.",
     )
     parser.add_argument(
         "--game-config",
         type=Path,
-        default=_CONFIGS_ROOT / "default_game.yaml",
-        help="Complete game-rules and taxi-physics YAML.",
+        default=None,
+        help="Optional partial Crazy Robotaxi YAML. Explicit CLI values override it.",
     )
     parser.add_argument(
         "--synthetic-model",
@@ -261,9 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=("Select taxi fares or checkpoint racing (default: taxi)."),
     )
     parser.add_argument(
-        "--disable-visual-flare",
-        action="store_true",
-        help=("Keep the collision visual flare disabled (the default)."),
+        "--visual-flare",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=("Enable or disable the collision visual flare."),
     )
     parser.add_argument(
         "--bev",
@@ -362,55 +351,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_resolution(value: str) -> tuple[int, int]:
-    parts = value.lower().split("x")
-    if len(parts) != 2:
-        raise SystemExit(f"--bev-resolution expected WIDTHxHEIGHT, got {value!r}")
-    try:
-        width, height = int(parts[0]), int(parts[1])
-    except ValueError as exc:
-        raise SystemExit(
-            f"--bev-resolution components must be integers: {value!r}"
-        ) from exc
-    if width <= 0 or height <= 0:
-        raise SystemExit(f"--bev-resolution must be positive: {value!r}")
-    return width, height
-
-
-def renderer_settings_from_args(args: argparse.Namespace) -> RendererSettings:
-    """Load renderer YAML and apply explicit visual CLI overrides."""
-    cached = getattr(args, "_renderer_settings", None)
-    if cached is not None:
-        return cached
-    path = resolve_app_config_path(
-        getattr(args, "renderer_config", _CONFIGS_ROOT / "default_renderer.yaml")
-    )
-    settings = load_renderer_settings(path)
-    bev = settings.bev
-    if getattr(args, "bev", None) is not None:
-        bev = replace(bev, enabled=bool(args.bev))
-    if getattr(args, "bev_resolution", None) is not None:
-        width, height = _parse_resolution(args.bev_resolution)
-        bev = replace(bev, width=width, height=height)
-    for arg_name, field_name in (
-        ("bev_height_m", "height_m"),
-        ("bev_fov_deg", "fov_deg"),
-        ("bev_tilt_deg", "tilt_deg"),
-    ):
-        value = getattr(args, arg_name, None)
-        if value is not None:
-            bev = replace(bev, **{field_name: float(value)})
-    settings = replace(settings, bev=bev)
-    setattr(args, "_renderer_settings", settings)
-    args.renderer_config = path
-    # The HUD presenters still consume these resolved values from the argparse
-    # namespace. Keep that compatibility surface concrete after YAML + CLI merge.
-    args.bev = settings.bev.enabled
-    args.bev_resolution = f"{settings.bev.width}x{settings.bev.height}"
-    args.bev_height_m = settings.bev.height_m
-    args.bev_fov_deg = settings.bev.fov_deg
-    args.bev_tilt_deg = settings.bev.tilt_deg
-    return settings
+def rendering_settings_from_args(args: argparse.Namespace) -> RenderingSettings:
+    """Return rendering values from the resolved engine configuration."""
+    return engine_settings_from_args(args).rendering
 
 
 def main() -> None:
@@ -432,6 +375,10 @@ def prepare_config_and_backend(
     hand it to a long-lived :class:`InteractiveDriveApp` that switches scenes in
     place (keeping the warmed model resident).
     """
+    engine_settings_from_args(args)
+    from crazy_robotaxi.game_settings import game_settings_from_args
+
+    game_settings = game_settings_from_args(args)
     # Stamp the resolved HF org before manifest and model artifact resolution.
     resolved_org = apply_cli_to_env(args.hf_org)
     if resolved_org != DEFAULT_HF_ORG:
@@ -460,8 +407,8 @@ def prepare_config_and_backend(
                 f"available: {available}"
             )
 
-    renderer_settings = renderer_settings_from_args(args)
-    bev_config = renderer_settings.bev
+    rendering_settings = rendering_settings_from_args(args)
+    bev_config = rendering_settings.bev
     manifest_path = (
         resolve_manifest_path(args.manifest) if args.manifest is not None else None
     )
@@ -474,11 +421,7 @@ def prepare_config_and_backend(
         prompt_override=args.prompt,
         force_map_recompile=bool(args.force_map_recompile),
         manifest_path=manifest_path,
-        raster=replace(
-            renderer_settings.raster,
-            compute_device=args.compute_device,
-            sync_gpu_timing=args.sync_gpu_timing,
-        ),
+        raster=rendering_settings.raster,
         world_model_profile=WorldModelProfileConfig(
             enabled=bool(args.profile_world_model),
         ),
@@ -488,11 +431,7 @@ def prepare_config_and_backend(
         game_mode=False,
         stream_mjpeg_bind=args.stream_mjpeg,
         stop_after_consumed_chunks=args.stop_after_chunks,
-        visual_flare_enabled=(
-            False
-            if args.disable_visual_flare
-            else renderer_settings.visual_flare_enabled
-        ),
+        visual_flare_enabled=game_settings.effects.visual_flare_enabled,
     )
 
     backend: RenderBackend

@@ -593,7 +593,7 @@ class SlangPyHudPresenter:
         self._model_can_prewarm = False
         self._model_ready_probe: Callable[[], bool] = lambda: True
         # Scene-change lock, wired by the demo via
-        # :meth:`set_scene_selection_locked` when --preload-scenes is on.
+        # :meth:`set_scene_selection_locked` when --preload-maps is on.
         # While the probe returns True, changes wait until every scene is
         # cached.
         self._scene_selection_locked_probe: Callable[[], bool] = lambda: False
@@ -3339,7 +3339,7 @@ class SlangPyHudPresenter:
     def wait_while_preloading(self, in_progress: Callable[[], bool]) -> None:
         """Pump the "Preloading maps..." chrome until ``in_progress()`` clears.
 
-        Used by ``--preload-scenes`` so the selected map waits for the
+        Used by ``--preload-maps`` so the selected map waits for the
         background preloader to finish instead of racing it with a second
         compile.
         Returns early if the window closes. Keeps the engine inactive so the

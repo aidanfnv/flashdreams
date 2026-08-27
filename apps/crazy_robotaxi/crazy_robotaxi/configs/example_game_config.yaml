@@ -1,4 +1,7 @@
 schema_version: 1
+mode: taxi
+effects:
+  visual_flare_enabled: false
 rules:
   waypoint_spacing_m: 10.0
   pickup_grid_spacing_m: 60.0
@@ -71,3 +74,22 @@ vehicle:
   handbrake_yaw_response_rate: 4.0
   handbrake_lateral_damping_rate: 2.0
   handbrake_lateral_accel_scale: 0.35
+taxi:
+  seed: null
+  high_scores_path: null
+race:
+  course: null
+  times_path: null
+live_edit:
+  style:
+    enabled: false
+  weather:
+    enabled: false
+  obstacle:
+    enabled: false
+  coins:
+    enabled: false
+  items:
+    enabled: false
+diagnostics:
+  alignment_directory: null

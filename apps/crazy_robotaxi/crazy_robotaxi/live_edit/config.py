@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import argparse
 import os
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
+
+from omnidreams_game_engine.cli_args import arg_was_explicit
 
 _CORRECTOR_MODES = ("fused", "unfused", "off")
 
@@ -1178,81 +1181,192 @@ def add_live_edit_args(parser: argparse.ArgumentParser) -> None:
 
 
 def live_edit_config_from_args(args: argparse.Namespace) -> LiveEditConfig:
-    """Build the live-edit configuration at the application composition root."""
-    return LiveEditConfig(
-        style=LiveEditStyleConfig(
-            enabled=bool(args.live_edit_style),
-            lora_checkpoint=args.live_edit_style_lora,
-            corrector_checkpoint=args.live_edit_style_corrector,
-            corrector_gain=float(args.live_edit_style_gain),
-            corrector_mode=str(args.live_edit_corrector_mode),
-            base_corrector_checkpoint=args.live_edit_base_corrector,
-            base_corrector_gain=float(args.live_edit_base_corrector_gain),
-            gate_alpha_json=args.live_edit_gate_alpha_json,
-            guidance_chunks=int(args.live_edit_skin_guidance_chunks),
-            reswap_interval_chunks=int(args.live_edit_style_reswap_chunks),
-            skin_duration_chunks=int(args.live_edit_skin_duration_chunks),
-            skins=skins_starting_with(args.live_edit_skin_first),
-        ),
-        coins=LiveEditCoinsConfig(
-            enabled=bool(args.live_edit_coins),
-            sprite_path=args.live_edit_coin_sprite,
-            max_visible_sprites=int(args.live_edit_coin_max_visible),
-        ),
-        items=LiveEditItemsConfig(
-            enabled=bool(args.live_edit_items),
-            spacing_m=float(args.live_edit_item_spacing),
-            rain_sprite_path=args.live_edit_item_rain_sprite,
-            snow_sprite_path=args.live_edit_item_snow_sprite,
-            mystery_sprite_path=args.live_edit_item_mystery_sprite,
-            nitro_sprite_path=args.live_edit_item_nitro_sprite,
-            item_types=(
-                ITEM_TYPES
-                if args.live_edit_item_types is None
-                else tuple(
-                    name.strip()
-                    for name in str(args.live_edit_item_types).split(",")
-                    if name.strip()
-                )
-            ),
-            nitro_boost=float(args.live_edit_nitro_boost),
-            nitro_duration_s=float(args.live_edit_nitro_duration_s),
-            nitro_max_speed_mps=float(args.live_edit_nitro_max_speed),
-            mystery_burst_chunks=int(args.live_edit_item_mystery_burst_chunks),
-            mystery_seed=(
-                None
-                if args.live_edit_item_mystery_seed is None
-                else int(args.live_edit_item_mystery_seed)
-            ),
-        ),
-        weather=LiveEditWeatherConfig(
-            enabled=bool(args.live_edit_weather),
-            guidance_scale=float(args.live_edit_weather_guidance),
-            guidance_chunks=int(args.live_edit_weather_guidance_chunks),
-            maintain_interval_chunks=int(args.live_edit_weather_maintain_interval),
-            maintain_chunks=int(args.live_edit_weather_maintain_chunks),
-            duration_chunks=int(args.live_edit_weather_duration_chunks),
-            clear_guidance_chunks=int(args.live_edit_weather_clear_guidance_chunks),
-            corrector_gain=float(args.live_edit_weather_corrector_gain),
-            corrector_checkpoint=args.live_edit_weather_corrector,
-            weathers=weathers_starting_with(args.live_edit_weather_first),
-        ),
-        perf_log_every_frames=int(args.live_edit_perf_log),
-        obstacle=LiveEditObstacleConfig(
-            enabled=bool(args.live_edit_obstacle),
-            physics=bool(args.live_edit_obstacle_physics),
-            placement=cast(
-                Literal["ego-relative", "road-ahead"],
-                args.live_edit_obstacle_placement,
-            ),
-            count=int(args.live_edit_obstacle_count),
-            stagger_chunks=int(args.live_edit_obstacle_stagger_chunks),
-            spawn_ahead_m=float(args.live_edit_obstacle_ahead_m),
-            active_chunks=int(args.live_edit_obstacle_chunks),
-            static_count=int(args.live_edit_obstacle_static_count),
-            static_ahead_m=float(args.live_edit_obstacle_static_ahead_m),
-            static_lateral_m=float(args.live_edit_obstacle_static_lateral_m),
-            guide_scale=float(args.live_edit_obstacle_guide_scale),
-            annotate=bool(args.live_edit_obstacle_annotate),
+    """Build live-edit configuration, honoring a previously loaded game YAML."""
+    base = getattr(args, "_live_edit_settings", None)
+    return apply_live_edit_cli(
+        base or LiveEditConfig(), args, explicit_only=base is not None
+    )
+
+
+def apply_live_edit_cli(
+    base: LiveEditConfig,
+    args: argparse.Namespace,
+    *,
+    explicit_only: bool,
+) -> LiveEditConfig:
+    """Apply live-edit CLI values to ``base``.
+
+    ``explicit_only`` is used after a YAML overlay so parser defaults do not
+    accidentally replace file values.
+
+    Args:
+        base: Lower-precedence live-edit settings.
+        args: Parsed Crazy Robotaxi arguments.
+        explicit_only: Whether to ignore values not explicitly present in the
+            command line.
+
+    Returns:
+        Live-edit settings with the selected CLI values applied.
+    """
+
+    def selected(name: str) -> bool:
+        return not explicit_only or arg_was_explicit(args, name)
+
+    def updates(
+        mapping: dict[str, tuple[str, Callable[[Any], object]]],
+    ) -> dict[str, object]:
+        return {
+            field_name: transform(getattr(args, arg_name))
+            for arg_name, (field_name, transform) in mapping.items()
+            if selected(arg_name)
+        }
+
+    style = replace(
+        base.style,
+        **updates(
+            {
+                "live_edit_style": ("enabled", bool),
+                "live_edit_style_lora": ("lora_checkpoint", lambda value: value),
+                "live_edit_style_corrector": (
+                    "corrector_checkpoint",
+                    lambda value: value,
+                ),
+                "live_edit_style_gain": ("corrector_gain", float),
+                "live_edit_corrector_mode": ("corrector_mode", str),
+                "live_edit_skin_guidance_chunks": ("guidance_chunks", int),
+                "live_edit_base_corrector": (
+                    "base_corrector_checkpoint",
+                    lambda value: value,
+                ),
+                "live_edit_base_corrector_gain": ("base_corrector_gain", float),
+                "live_edit_gate_alpha_json": ("gate_alpha_json", lambda value: value),
+                "live_edit_style_reswap_chunks": ("reswap_interval_chunks", int),
+                "live_edit_skin_duration_chunks": ("skin_duration_chunks", int),
+            }
         ),
     )
+    if selected("live_edit_skin_first") and args.live_edit_skin_first is not None:
+        style = replace(
+            style,
+            skins=_rotate_named(style.skins, args.live_edit_skin_first, "skin"),
+        )
+    weather = replace(
+        base.weather,
+        **updates(
+            {
+                "live_edit_weather": ("enabled", bool),
+                "live_edit_weather_guidance": ("guidance_scale", float),
+                "live_edit_weather_guidance_chunks": ("guidance_chunks", int),
+                "live_edit_weather_maintain_interval": (
+                    "maintain_interval_chunks",
+                    int,
+                ),
+                "live_edit_weather_maintain_chunks": ("maintain_chunks", int),
+                "live_edit_weather_duration_chunks": ("duration_chunks", int),
+                "live_edit_weather_clear_guidance_chunks": (
+                    "clear_guidance_chunks",
+                    int,
+                ),
+                "live_edit_weather_corrector_gain": ("corrector_gain", float),
+                "live_edit_weather_corrector": (
+                    "corrector_checkpoint",
+                    lambda value: value,
+                ),
+            }
+        ),
+    )
+    if selected("live_edit_weather_first") and args.live_edit_weather_first is not None:
+        weather = replace(
+            weather,
+            weathers=_rotate_named(
+                weather.weathers, args.live_edit_weather_first, "weather"
+            ),
+        )
+    obstacle = replace(
+        base.obstacle,
+        **updates(
+            {
+                "live_edit_obstacle": ("enabled", bool),
+                "live_edit_obstacle_physics": ("physics", bool),
+                "live_edit_obstacle_placement": (
+                    "placement",
+                    lambda value: cast(Literal["ego-relative", "road-ahead"], value),
+                ),
+                "live_edit_obstacle_count": ("count", int),
+                "live_edit_obstacle_stagger_chunks": ("stagger_chunks", int),
+                "live_edit_obstacle_ahead_m": ("spawn_ahead_m", float),
+                "live_edit_obstacle_chunks": ("active_chunks", int),
+                "live_edit_obstacle_static_count": ("static_count", int),
+                "live_edit_obstacle_static_ahead_m": ("static_ahead_m", float),
+                "live_edit_obstacle_static_lateral_m": ("static_lateral_m", float),
+                "live_edit_obstacle_guide_scale": ("guide_scale", float),
+                "live_edit_obstacle_annotate": ("annotate", bool),
+            }
+        ),
+    )
+    coins = replace(
+        base.coins,
+        **updates(
+            {
+                "live_edit_coins": ("enabled", bool),
+                "live_edit_coin_sprite": ("sprite_path", lambda value: value),
+                "live_edit_coin_max_visible": ("max_visible_sprites", int),
+            }
+        ),
+    )
+
+    def item_types(value: object) -> tuple[str, ...]:
+        if value is None:
+            return ITEM_TYPES
+        return tuple(name.strip() for name in str(value).split(",") if name.strip())
+
+    items = replace(
+        base.items,
+        **updates(
+            {
+                "live_edit_items": ("enabled", bool),
+                "live_edit_item_spacing": ("spacing_m", float),
+                "live_edit_item_rain_sprite": ("rain_sprite_path", lambda value: value),
+                "live_edit_item_snow_sprite": ("snow_sprite_path", lambda value: value),
+                "live_edit_item_mystery_sprite": (
+                    "mystery_sprite_path",
+                    lambda value: value,
+                ),
+                "live_edit_item_nitro_sprite": (
+                    "nitro_sprite_path",
+                    lambda value: value,
+                ),
+                "live_edit_item_types": ("item_types", item_types),
+                "live_edit_nitro_boost": ("nitro_boost", float),
+                "live_edit_nitro_duration_s": ("nitro_duration_s", float),
+                "live_edit_nitro_max_speed": ("nitro_max_speed_mps", float),
+                "live_edit_item_mystery_burst_chunks": (
+                    "mystery_burst_chunks",
+                    int,
+                ),
+                "live_edit_item_mystery_seed": (
+                    "mystery_seed",
+                    lambda value: None if value is None else int(value),
+                ),
+            }
+        ),
+    )
+    config = replace(
+        base,
+        style=style,
+        weather=weather,
+        obstacle=obstacle,
+        coins=coins,
+        items=items,
+    )
+    if selected("live_edit_perf_log"):
+        config = replace(config, perf_log_every_frames=int(args.live_edit_perf_log))
+    return config
+
+
+def _rotate_named(values: tuple[object, ...], name: str, kind: str) -> tuple:
+    names = [getattr(value, "name") for value in values]
+    if name not in names:
+        raise ValueError(f"unknown {kind} {name!r}; choose from {names}")
+    index = names.index(name)
+    return values[index:] + values[:index]

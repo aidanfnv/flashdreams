@@ -155,27 +155,37 @@ lower times are better.
 
 ## Configuration files
 
-The standalone game keeps its portable configuration in three independent,
-strict YAML documents:
+Crazy Robotaxi accepts two optional, strict, partial configuration documents in
+addition to its map and world-model manifest:
 
-- `*.robotaxi.yaml` describes one map, including topology, geometry, profiles,
-  compiler settings, spawns, and visual seed variants.
-- `default_renderer.yaml` describes primary-camera and BEV rendering.
-- `default_game.yaml` describes rules, scoring, controls, taxi dimensions, and
-  arcade physics.
+- `--engine-config` covers map selection/loading, the world-model runtime,
+  raster and BEV rendering, presentation/streaming, wheel input, and engine
+  diagnostics.
+- `--game-config` covers taxi/race mode, rules, scoring, player-vehicle physics,
+  persistence, collision effects, and every live-edit ability.
 
-The packaged renderer and game files are used when no path is supplied. Select
-edited copies independently:
+Both use `schema_version: 1`. Omitted files and fields use the typed defaults in
+the code; unknown fields and invalid values are errors. The checked-in
+`example_engine_config.yaml` and `example_game_config.yaml` documents are
+examples only and are not loaded automatically:
 
 ```bash
 flashdreams-run crazy-robotaxi \
-  --renderer-config /path/to/renderer.yaml \
+  --engine-config /path/to/engine.yaml \
   --game-config /path/to/game.yaml
 ```
 
-Existing explicit CLI tuning flags override YAML values. The world-model
-manifest remains separate because it configures inference rather than the map,
-renderer, or game. All three YAML formats reject missing and unknown fields.
+Settings resolve in this order: typed defaults, environment variables, YAML,
+then explicitly supplied CLI flags. Relative paths inside a config resolve from
+that config's directory; relative CLI paths resolve from the working directory.
+`--stream-token` remains CLI-only so secrets are not encouraged in checked-in
+configuration.
+
+`*.robotaxi.yaml` remains the authoritative map format, including topology,
+geometry, profiles, compiler settings, spawns, and visual seed variants. The
+world-model manifest also remains separate because it configures the reusable
+inference recipe rather than engine or game policy. Engine YAML references both
+documents by path instead of embedding them.
 
 ## Node-graph game maps
 

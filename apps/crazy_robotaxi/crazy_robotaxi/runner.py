@@ -52,11 +52,11 @@ class CrazyRobotaxiRunnerConfig(RunnerConfig):
     world_model_manifest: Path | None = None
     """World-model manifest; named to avoid the global ``--manifest``."""
 
-    renderer_config: Path | None = None
-    """Renderer YAML override; ``None`` uses the packaged default."""
+    engine_config: Path | None = None
+    """Optional partial engine YAML."""
 
     game_config: Path | None = None
-    """Gameplay and taxi-physics YAML override; ``None`` uses the packaged default."""
+    """Optional partial Crazy Robotaxi YAML."""
 
     camera: str | None = None
     """Camera name override for the selected scene."""
@@ -70,8 +70,8 @@ class CrazyRobotaxiRunnerConfig(RunnerConfig):
     backend: Literal["raster", "omnidreams"] | None = None
     """Render backend override; ``None`` selects the production world model."""
 
-    game_mode: Literal["taxi", "race"] = "taxi"
-    """Gameplay mode selected for the session."""
+    game_mode: Literal["taxi", "race"] | None = None
+    """Optional gameplay-mode override; ``None`` defers to game YAML/defaults."""
 
     race_course: str | None = None
     """Race course ID; ``None`` selects the map's first course."""
@@ -111,7 +111,7 @@ class CrazyRobotaxiRunner(Runner):
         argv = list(self.config.app_args)
         _append_value(argv, "--map", self.config.map)
         _append_value(argv, "--manifest", self.config.world_model_manifest)
-        _append_value(argv, "--renderer-config", self.config.renderer_config)
+        _append_value(argv, "--engine-config", self.config.engine_config)
         _append_value(argv, "--game-config", self.config.game_config)
         _append_value(argv, "--camera", self.config.camera)
         _append_value(argv, "--variant", self.config.variant)

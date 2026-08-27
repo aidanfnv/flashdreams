@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 from loguru import logger
 from omnidreams_game_engine.app import InteractiveDriveApp
+from omnidreams_game_engine.cli_args import arg_was_explicit
 from omnidreams_game_engine.config import BevConfig
 from omnidreams_game_engine.game_map import (
     GAME_MAP_SUFFIX,
@@ -517,7 +518,15 @@ def build_parser() -> argparse.ArgumentParser:
         " --stream-mjpeg HOST:PORT serves the browser HUD on compute-only hosts."
     )
     parser.add_argument(
+        "--hud",
+        dest="no_hud",
+        action="store_false",
+        default=False,
+        help="Use the native game HUD (the default).",
+    )
+    parser.add_argument(
         "--no-hud",
+        dest="no_hud",
         action="store_true",
         help=(
             "Run the bare diagnostic renderer. This cannot be combined with"
@@ -536,7 +545,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--preload-scenes",
+        "--preload-maps",
+        dest="preload_maps",
         action=argparse.BooleanOptionalAction,
         default=False,
         help=(
@@ -595,7 +605,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=argparse.SUPPRESS,
     )
-    parser.add_argument("--no-wheel", action="store_true")
+    parser.add_argument("--wheel", dest="no_wheel", action="store_false", default=False)
+    parser.add_argument("--no-wheel", dest="no_wheel", action="store_true")
     return parser
 
 
@@ -631,13 +642,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Launch a standalone Crazy Robotaxi session."""
     configure_logging()
     args = build_parser().parse_args(argv)
-    args.renderer_config = _cli.resolve_app_config_path(args.renderer_config)
-    args.game_config = _cli.resolve_app_config_path(args.game_config)
-    from crazy_robotaxi.game_settings import load_game_settings
+    _cli.engine_settings_from_args(args)
+    from crazy_robotaxi.game_settings import game_settings_from_args
 
-    args._game_settings = load_game_settings(args.game_config)
+    game_settings_from_args(args)
+    if args.scene is None:
+        raise SystemExit("A map path is required (set engine.map.path or --map)")
     if args.game_mode == "taxi" and (
-        args.race_course is not None or args.race_times is not None
+        arg_was_explicit(args, "race_course") or arg_was_explicit(args, "race_times")
     ):
         raise SystemExit("--race-course and --race-times require --game-mode race")
     _validate_presenter_mode(args)
@@ -683,7 +695,7 @@ def _run_slangpy_hud(args: argparse.Namespace) -> None:
 
     _apply_cuda_visible_devices_inplace(args.cuda_visible_devices)
     _resolve_demo_paths(args)
-    renderer_settings = _cli.renderer_settings_from_args(args)
+    rendering_settings = _cli.rendering_settings_from_args(args)
     scene_options = _discover_scene_options(args.scene_dir, args.scene)
     if not args.scene.exists() and scene_options:
         args.scene = scene_options[0].path
@@ -714,7 +726,7 @@ def _run_slangpy_hud(args: argparse.Namespace) -> None:
     placeholder_keyboard = KeyboardState()
     app: InteractiveDriveApp | None = None
     presenter = SlangPyHudPresenter(
-        raster=renderer_settings.raster,
+        raster=rendering_settings.raster,
         keyboard=placeholder_keyboard,
         args=args,
         scene_options=scene_options,
@@ -760,7 +772,7 @@ def _run_slangpy_hud(args: argparse.Namespace) -> None:
         wheel.start()
         presenter.set_wheel(wheel)
 
-    if args.preload_scenes:
+    if args.preload_maps:
         app.preload_scenes(
             (opt.path, variant, args.prompt)
             for opt in scene_options
@@ -879,9 +891,9 @@ def _run_streaming(args: argparse.Namespace) -> None:
     bind_host, bind_port = parse_bind(args.stream_mjpeg)
     placeholder_keyboard = KeyboardState()
     app: InteractiveDriveApp | None = None
-    renderer_settings = _cli.renderer_settings_from_args(args)
+    rendering_settings = _cli.rendering_settings_from_args(args)
     presenter = MJPEGStreamingPresenter(
-        raster=renderer_settings.raster,
+        raster=rendering_settings.raster,
         keyboard=placeholder_keyboard,
         bind_host=bind_host,
         bind_port=bind_port,
@@ -909,7 +921,7 @@ def _run_streaming(args: argparse.Namespace) -> None:
         close_presenter_on_exit=False,
     )
     presenter = getattr(app, "presenter", presenter)
-    if args.preload_scenes:
+    if args.preload_maps:
         app.preload_scenes(
             (opt.path, variant, args.prompt)
             for opt in scene_options
@@ -1004,8 +1016,6 @@ def _resolve_demo_paths(args: argparse.Namespace) -> None:
             setattr(args, attr, _project_path(value))
     if args.manifest is not None:
         args.manifest = _cli.resolve_manifest_path(args.manifest)
-    args.renderer_config = _cli.resolve_app_config_path(args.renderer_config)
-    args.game_config = _cli.resolve_app_config_path(args.game_config)
     if args.control_assets_dir is not None:
         args.control_assets_dir = _project_path(args.control_assets_dir)
 
@@ -1020,12 +1030,12 @@ def _project_path(path: Path) -> Path:
 
 
 def _discover_scene_options(
-    scene_dir: Path, selected_scene: Path
+    scene_dir: Path | None, selected_scene: Path
 ) -> tuple[SceneOption, ...]:
     paths: set[Path] = set()
     if selected_scene.exists():
         paths.add(selected_scene.resolve())
-    if scene_dir.is_dir():
+    if scene_dir is not None and scene_dir.is_dir():
         paths.update(path.resolve() for path in scene_dir.glob(f"*{GAME_MAP_SUFFIX}"))
     if selected_scene.parent.is_dir():
         paths.update(

@@ -202,7 +202,7 @@ def test_run_streaming_starts_command_line_map(
         backend="placeholder",
         manifest=None,
         stream_mjpeg="8080",
-        preload_scenes=False,
+        preload_maps=False,
         prompt=None,
     )
 
