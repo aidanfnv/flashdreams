@@ -55,6 +55,10 @@ class NativeAccelerationUnavailable(RuntimeError):
     """Raised when native execution is required but unavailable."""
 
 
+class NativeSourcesUnavailable(RuntimeError):
+    """Raised when native extension sources must be synchronized."""
+
+
 @dataclass(kw_only=True)
 class NativeAccelerationConfig:
     """Common native acceleration knobs for pipeline components."""
@@ -119,10 +123,19 @@ def _native_extension_unavailable_reason(
     base = f"native extension unavailable for {component}"
     if error is not None:
         base = f"{base}: {error}"
-    return (
-        f"{base}. To sync third-party native sources, run:\n"
-        f"  {NATIVE_EXTENSION_SYNC_COMMAND}"
-    )
+    if isinstance(error, NativeSourcesUnavailable):
+        return (
+            f"{base}. To sync third-party native sources, run:\n"
+            f"  {NATIVE_EXTENSION_SYNC_COMMAND}"
+        )
+    if isinstance(error, ImportError):
+        return (
+            f"{base}. Native module import failed; check that the generated "
+            ".pyd exists and that its CUDA, cuDNN, and PyTorch DLL dependencies "
+            "are discoverable. Re-syncing third-party sources will not fix a "
+            "DLL import failure"
+        )
+    return base
 
 
 def select_native_extension(
