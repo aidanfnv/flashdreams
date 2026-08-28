@@ -146,10 +146,12 @@ The model thread publishes a list of channels per step into a bounded queue
 which walks the frames within the chunk it is already showing before taking
 another off the queue.
 
-Frame cadence initially uses `frames_per_second_for_step`, then follows model
-frame completions observed over the trailing two seconds. A late UI tick
-reanchors the next deadline; it never drains multiple model frames into
-back-to-back writes in one tick.
+Frame cadence initially uses `frames_per_second_for_step`. With nonblocking
+`DROP_OLDEST` backpressure it then follows model frame completions observed over
+the trailing two seconds. `BLOCK` keeps the declared cadence because queue
+waiting throttles the producer and is not a measurement of intrinsic model
+throughput. A late UI tick reanchors the next deadline; it never drains multiple
+model frames into back-to-back writes in one tick.
 
 `SessionDesc.backpressure_mode` decides what publishing does when the queue is
 full:
@@ -178,7 +180,10 @@ once.
 
 A UI loop reads model frames through `presented_model_frame` and
 `presented_model_frames`, composites whatever it wants, and returns one
-`StepResult` that `run_session` writes to the window.
+`StepResult` that `run_session` writes to the window. The UI step and the window
+write both run in the presentation manager's CUDA-stream context so native
+conversion and Vulkan interop are not queued behind model work on the default
+stream.
 
 The default UI loop, `BlitModelOutputToScreenLoop`, composites every model
 channel in list order as if they were image layers and reshapes the result into

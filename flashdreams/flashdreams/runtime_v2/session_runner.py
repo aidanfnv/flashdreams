@@ -14,7 +14,7 @@ from flashdreams.api_v2.output_sink import OutputSink
 from flashdreams.api_v2.session import ISession
 from flashdreams.api_v2.user_input_event import UserInputEvent
 from flashdreams.runtime_v2.event_buffer import EventBuffer
-from flashdreams.runtime_v2.session_desc import PresentationMode
+from flashdreams.runtime_v2.session_desc import BackpressureMode, PresentationMode
 from flashdreams.runtime_v2.step_result import StepResult
 from flashdreams.runtime_v2.user_input_event import CloseUserInputEvent
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
@@ -34,8 +34,11 @@ class _PresentationClock:
         self,
         frames_per_second: int,
         maximum_frames_per_second: int | None = None,
+        *,
+        adapt_to_model_throughput: bool = True,
     ) -> None:
         maximum_frames_per_second = maximum_frames_per_second or frames_per_second
+        self._adapt_to_model_throughput = adapt_to_model_throughput
         self._minimum_frame_interval = 1.0 / maximum_frames_per_second
         self._fallback_frame_interval = max(
             1.0 / frames_per_second,
@@ -73,6 +76,8 @@ class _PresentationClock:
         """
         if frame_count <= 0:
             raise ValueError(f"frame_count must be > 0, got {frame_count}.")
+        if not self._adapt_to_model_throughput:
+            return
         with self._lock:
             if self._generation is None or generation > self._generation:
                 self._reset_generation(generation)
@@ -144,6 +149,15 @@ def _contains(events: UserInputEvents, event_type: type[UserInputEvent]) -> bool
     return any(isinstance(event, event_type) for event in events.get_events())
 
 
+def _next_ui_tick_at(
+    current_tick_at: float,
+    tick_seconds: float,
+    completed_at: float,
+) -> float:
+    """Schedule the next UI tick without adding idle time after an overrun."""
+    return max(current_tick_at + tick_seconds, completed_at)
+
+
 def _log_secondary_failure(message: str, error: BaseException) -> None:
     """Log a cleanup failure that cannot replace an earlier exception."""
     _LOGGER.error(message, exc_info=error)
@@ -191,6 +205,9 @@ def run_session(
     presentation_clock = _PresentationClock(
         session_desc.frames_per_second_for_step,
         maximum_frames_per_second=session_desc.frames_per_second_for_ui,
+        adapt_to_model_throughput=(
+            session_desc.backpressure_mode is BackpressureMode.DROP_OLDEST
+        ),
     )
     event_buffer = EventBuffer()
     stop = session._shutdown_event
@@ -215,7 +232,7 @@ def run_session(
             stop.set()
 
     def run_ui_once() -> None:
-        """Run one UI step and write every result it produces."""
+        """Run and write one UI step on the presentation stream."""
         if ui_loop is None:
             return
         events, generation = event_buffer.read(_UI_READER_ID)
@@ -227,8 +244,8 @@ def run_session(
             if result is not None and not isinstance(result, StepResult):
                 raise TypeError("A UI loop must return StepResult or None.")
             ui_loop._finish_run(result)
-        if result is not None:
-            window.write(result)
+            if result is not None:
+                window.write(result)
 
     def publish_model_results(
         generation: int,
@@ -245,11 +262,12 @@ def run_session(
             for result in results:
                 metrics_output_sink.write(result)
 
-    def tick_ui() -> None:
+    def tick_ui(scheduled_at: float | None = None) -> None:
+        """Run one UI tick using its scheduled time for presentation cadence."""
         assert ui_loop is not None
         generation = event_buffer.generation
         model_advanced = False
-        now = time.monotonic()
+        now = time.monotonic() if scheduled_at is None else scheduled_at
         if presentation_clock.is_due(now, generation):
             model_advanced, _ = presentation_manager.advance(generation)
         if model_advanced:
@@ -305,12 +323,13 @@ def run_session(
                 collect_input()
                 if stop.is_set():
                     break
-                tick_ui()
+                tick_ui(next_tick_at)
                 event_buffer.collect_garbage()
-                next_tick_at += tick_seconds
-                completed_at = time.monotonic()
-                if next_tick_at <= completed_at:
-                    next_tick_at = completed_at + tick_seconds
+                next_tick_at = _next_ui_tick_at(
+                    next_tick_at,
+                    tick_seconds,
+                    time.monotonic(),
+                )
     except BaseException as error:
         high_level_failures = error
     finally:

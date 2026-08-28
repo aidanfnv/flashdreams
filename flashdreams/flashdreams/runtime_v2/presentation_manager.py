@@ -466,7 +466,7 @@ def _composite_frame(bottom: Tensor | None, top: Tensor) -> Tensor:
             ).squeeze(0)
     alpha = top[3:4].to(device=bottom.device, dtype=torch.float32)
     alpha = alpha.clamp(0.0, 1.0).to(bottom.dtype)
-    return color * alpha + bottom * (1.0 - alpha)
+    return torch.lerp(bottom, color, alpha)
 
 
 __all__ = ["PresentationManager"]
