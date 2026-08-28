@@ -136,7 +136,7 @@ def test_ludus_cuda_context_renders_frame(clipgt_scene_dir: Path) -> None:
 @pytest.mark.manual
 def test_ludus_physx_debug_scene_renders_cuda_frame() -> None:
     """Render the interactive-drive collider scene without host materialization."""
-    from ludus_renderer import TimestampedScene
+    from ludus_renderer import CUBE_FLAG_WIREFRAME, TimestampedScene
     from ludus_renderer.render_utils import create_camera
     from ludus_renderer.torch import LudusCudaTimestampedContext
     from ludus_renderer.torch.ops import CAMERA_TYPE_REGULAR
@@ -170,6 +170,7 @@ def test_ludus_physx_debug_scene_renders_cuda_frame() -> None:
     pool = build_physx_debug_cube_pool(
         (snapshot,), timestamp.cpu().numpy(), device=device
     )
+    assert pool.render_flags == CUBE_FLAG_WIREFRAME
 
     ctx = LudusCudaTimestampedContext(device=device)
     ctx.upload_cameras([create_camera(width, height, device)])

@@ -117,8 +117,8 @@ class _GamepadState:
     left_y = 0.5
     right_x = 0.75
     right_y = -1.25
-    left_trigger = 0.2
-    right_trigger = 1.25
+    left_trigger = 1.25
+    right_trigger = -0.5
     buttons = (1 << 1) | (1 << 9) | (1 << 13)
 
 
@@ -399,8 +399,8 @@ def test_native_window_reports_standard_gamepad_events() -> None:
         0.0,
         0.0,
         0.0,
-        0.2,
         1.0,
+        0.25,
         0.0,
         0.0,
         0.0,

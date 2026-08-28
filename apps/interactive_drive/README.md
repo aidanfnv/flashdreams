@@ -43,6 +43,7 @@ optional and follow the `--` separator:
 | `--width N` | Set the output width. Default: `1280` (`1168` for the perf app). |
 | `--height N` | Set the output height. Default: `704` (`640` for the perf app). |
 | `--view {rgb,hdmap,physx}` | Select the initial RGB, HD-map conditioning, or PhysX collider view. Default: `rgb`. |
+| `--no-ui` | Present model output directly without creating the HUD or rendering its BEV minimap. |
 | `--game-mode` | Enable the speed limit and collisions with scene actors and static map geometry. |
 | `--postprocess-preset NAME` | Start with a registered video post-processing preset enabled. Default: none. |
 | `--world-model-profile` | Enable synchronized world-model profiling. |
@@ -59,9 +60,19 @@ uv run flashdreams-run-v2 interactive-drive-omnidreams --mode webrtc -- \
     --game-mode --postprocess-preset rtx-super-resolution
 ```
 
-The HUD view button cycles through **RGB → HDMAP → PHYSX**. The number keys
-select those views directly: press `1` for RGB, `2` for the HD map, or `3` for
-PhysX.
+For example, render a video with the HUD disabled:
+```bash
+uv run flashdreams-run-v2 interactive-drive-omnidreams-perf --mode mp4 --output-path artifacts/test/interactive-drive.mp4 -- \
+    --no-ui
+```
+
+For example, render a native-window with game-mode collisions enabled:
+```bash
+uv run flashdreams-run-v2 interactive-drive-omnidreams-perf --mode native -- \
+    --game-mode
+```
+
+The HUD view has a button which when clicked cycles through **RGB → HDMAP → PHYSX**. The number keys on a keyboard selects those views directly: press `1` for RGB, `2` for the HD map, or `3` for PhysX.
 
 The preset starts enabled and the HUD's **Post-processing** checkbox can toggle
 it between generated chunks. Run

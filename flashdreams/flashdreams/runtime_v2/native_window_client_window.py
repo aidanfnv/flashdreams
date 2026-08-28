@@ -760,8 +760,11 @@ def _gamepad_state_event(state: spy.GamepadState) -> GamepadUserInputEvent:
         _clamp(float(value), low=-1.0, high=1.0)
         for value in (state.left_x, state.left_y, state.right_x, state.right_y)
     )
-    left_trigger = _clamp(float(state.left_trigger), low=0.0, high=1.0)
-    right_trigger = _clamp(float(state.right_trigger), low=0.0, high=1.0)
+    # SlangPy reports trigger axes in [-1, 1]; gamepad buttons use [0, 1].
+    left_trigger, right_trigger = (
+        (_clamp(float(value), low=-1.0, high=1.0) + 1.0) / 2.0
+        for value in (state.left_trigger, state.right_trigger)
+    )
     button_bits = int(state.buttons)
     pressed = tuple(
         (

@@ -103,21 +103,66 @@ class ClipGT2VConfig:
 
 @dataclass(frozen=True, slots=True)
 class DriveTelemetry:
-    """Thread-safe driving values published to an application UI loop."""
+    """Thread-safe model telemetry published to an application UI loop."""
 
     speed_mps: float
-    steering_rad: float
-    throttle: float
-    brake: float
     reverse: bool
     blocks_generated: int
     frames_in_chunk: int
     scene_path: Path
     variant: str
     postprocess_enabled: bool
-    input_source: str
     model_loop_ms: float
     bev_frame: Any | None = None
+
+
+@dataclass(slots=True)
+class DriveInputState:
+    """Driving input state owned and updated by one runtime loop."""
+
+    pressed_keys: set[str] = field(default_factory=set)
+    """Normalized driving keys currently held down."""
+
+    controller_command: DriverCommand | None = None
+    """Latest wheel or gamepad command; ``None`` when none is connected."""
+
+    def apply(self, events: UserInputEvents) -> None:
+        """Apply one loop's user-input events to this loop's state."""
+        for event in events.get_events():
+            if isinstance(event, KeyboardUserInputEvent):
+                key = _normalize_drive_key(event.key)
+                if key is None:
+                    continue
+                if event.state is KeyboardInputState.PRESSED:
+                    self.pressed_keys.add(key)
+                else:
+                    self.pressed_keys.discard(key)
+            elif isinstance(event, GameWheelUserInputEvent):
+                self.controller_command = (
+                    None
+                    if event.action == "disconnected"
+                    else DriverCommand(
+                        throttle=event.throttle,
+                        brake=event.brake,
+                        steer=-event.steering,
+                        steer_is_direct=True,
+                        manual_control=True,
+                    )
+                )
+            elif isinstance(event, GamepadUserInputEvent):
+                self.controller_command = _gamepad_command(event)
+
+    def command(self) -> DriverCommand:
+        """Return the command represented by this loop's current input state."""
+        if self.controller_command is not None:
+            return self.controller_command
+        return command_from_snapshot(ControlSnapshot(pressed=self.pressed_keys))
+
+    def source(self) -> str:
+        """Return a short label for the active input source."""
+        if self.controller_command is not None:
+            return "wheel/gamepad"
+        return "keyboard" if self.pressed_keys else "idle"
 
 
 @dataclass(slots=True)
@@ -132,8 +177,9 @@ class ClipGT2VModelState:
     next_timestamp_us: int = 0
     blocks_generated: int = 0
     first_chunk: bool = True
-    pressed_keys: set[str] = field(default_factory=set)
-    controller_command: DriverCommand | None = None
+    drive_input: DriveInputState = field(default_factory=DriveInputState)
+    """Driving input updated on the model thread."""
+
     last_command: DriverCommand = field(default_factory=DriverCommand)
     view_mode: ViewMode = "rgb"
     postprocess_enabled: bool = True
@@ -199,25 +245,14 @@ class ClipGT2VModelState:
         if self.ui_loop is None or self.vehicle is None:
             return
         bev_frame = chunk.frames[-1].bev_host_uint8 if chunk.frames else None
-        command = self.last_command
         telemetry = DriveTelemetry(
             speed_mps=self.vehicle.speed_mps,
-            steering_rad=self.vehicle.steer_rad,
-            throttle=command.throttle,
-            brake=command.brake,
-            reverse=command.reverse or self.vehicle.speed_mps < -0.01,
+            reverse=self.last_command.reverse or self.vehicle.speed_mps < -0.01,
             blocks_generated=self.blocks_generated,
             frames_in_chunk=len(chunk.frames),
             scene_path=self.config.app.scene_path,
             variant=self.config.app.variant,
             postprocess_enabled=self.postprocess_enabled,
-            input_source=(
-                "wheel/gamepad"
-                if self.controller_command is not None
-                else "keyboard"
-                if self.pressed_keys
-                else "idle"
-            ),
             model_loop_ms=model_loop_ms,
             bev_frame=bev_frame,
         )
@@ -409,33 +444,10 @@ class ClipGT2VModelLoop(IModelLoop[ClipGT2VModelState]):
                 if view_mode is not None:
                     if event.state is KeyboardInputState.PRESSED:
                         state.set_view_mode(view_mode)
-                    continue
-                key = _normalize_drive_key(event.key)
-                if key is None:
-                    continue
-                if event.state is KeyboardInputState.PRESSED:
-                    state.pressed_keys.add(key)
-                else:
-                    state.pressed_keys.discard(key)
-            elif isinstance(event, GameWheelUserInputEvent):
-                state.controller_command = (
-                    None
-                    if event.action == "disconnected"
-                    else DriverCommand(
-                        throttle=event.throttle,
-                        brake=event.brake,
-                        steer=-event.steering,
-                        steer_is_direct=True,
-                        manual_control=True,
-                    )
-                )
-            elif isinstance(event, GamepadUserInputEvent):
-                state.controller_command = _gamepad_command(event)
+        state.drive_input.apply(events)
 
     def _command(self) -> DriverCommand:
-        if self.state.controller_command is not None:
-            return self.state.controller_command
-        return command_from_snapshot(ControlSnapshot(pressed=self.state.pressed_keys))
+        return self.state.drive_input.command()
 
 
 @dataclass(slots=True)
@@ -580,9 +592,9 @@ class ClipGT2VApplication(IApplication):
         self._desc = SessionDesc(
             output_layout=VideoTensorLayout.tchw,
             frames_per_second_for_ui=60,
-            frames_per_second_for_step=30,
-            video_width=1280,
-            video_height=704,
+            frames_per_second_for_step=defaults.fps,
+            video_width=defaults.width,
+            video_height=defaults.height,
         )
 
     def init(self, commandline_args: Sequence[str]) -> None:
@@ -754,9 +766,6 @@ def _gamepad_command(event: GamepadUserInputEvent) -> DriverCommand | None:
     steer = -(event.axes[0] if event.axes else 0.0)
     throttle = event.buttons[7] if len(event.buttons) > 7 else 0.0
     brake = event.buttons[6] if len(event.buttons) > 6 else 0.0
-    if throttle == 0.0 and brake == 0.0 and len(event.axes) > 1:
-        throttle = max(0.0, -event.axes[1])
-        brake = max(0.0, event.axes[1])
     return DriverCommand(
         throttle=throttle,
         brake=brake,
@@ -773,15 +782,28 @@ def _frame_chunk_tensor(chunk: FrameChunk, view_mode: ViewMode) -> Tensor:
             value = frame.physx_rgb_host_uint8
             if value is None:
                 raise ValueError("PhysX view requires a PhysX debug frame.")
+            physx = np.asarray(value)
+            hdmap = np.asarray(frame.rgb_host_uint8)
+            if physx.shape != hdmap.shape:
+                raise ValueError(
+                    "PhysX and HD-map frames must have matching shapes; "
+                    f"received {physx.shape} and {hdmap.shape}."
+                )
+            if physx.ndim != 3 or physx.shape[-1] < 3:
+                raise ValueError(
+                    f"Expected HWC PhysX frame, received shape {physx.shape}"
+                )
+            collider_mask = np.any(physx[..., :3] != 0, axis=-1, keepdims=True)
+            array = np.where(collider_mask, physx, hdmap)
         elif view_mode == "hdmap":
-            value = frame.rgb_host_uint8
+            array = np.asarray(frame.rgb_host_uint8)
         else:
             value = (
                 frame.model_rgb_host_uint8
                 if frame.model_rgb_host_uint8 is not None
                 else frame.rgb_host_uint8
             )
-        array = np.asarray(value)
+            array = np.asarray(value)
         tensor = torch.from_numpy(np.ascontiguousarray(array))
         if tensor.ndim != 3:
             raise ValueError(
@@ -808,6 +830,7 @@ __all__ = [
     "ClipGT2VModelLoop",
     "ClipGT2VModelState",
     "ClipGT2VUILoop",
+    "DriveInputState",
     "DriveTelemetry",
     "SceneLoader",
     "ViewMode",

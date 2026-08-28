@@ -20,6 +20,7 @@ from clipgt2v.app import (
     ClipGT2VConfig,
     ClipGT2VModelLoop,
     ClipGT2VModelState,
+    DriveInputState,
     DriveTelemetry,
     SceneLoader,
     ViewMode,
@@ -31,7 +32,7 @@ from torch import Tensor
 from flashdreams.api_v2.loop import IModelLoop, invoke_async
 from flashdreams.api_v2.session import ISession
 from flashdreams.runtime_v2.imgui_ui_loop import ImGuiUILoop
-from flashdreams.runtime_v2.session_desc import SessionDesc
+from flashdreams.runtime_v2.session_desc import PresentationMode, SessionDesc
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
 from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
@@ -65,6 +66,9 @@ class InteractiveDriveUIState:
     postprocess_enabled: bool = False
     status: str = "W/S accelerate, A/D steer; gamepads and wheels are supported."
     telemetry: DriveTelemetry | None = None
+    drive_input: DriveInputState = field(default_factory=DriveInputState)
+    """Driving input updated on the UI thread."""
+
     sprites: dict[str, np.ndarray[Any, np.dtype[np.uint8]]] = field(
         default_factory=dict
     )
@@ -91,8 +95,10 @@ class InteractiveDriveUILoop(ImGuiUILoop[InteractiveDriveUIState]):
         self, imgui: Any, step_index: int, events: UserInputEvents
     ) -> Tensor | None:
         """Draw scene controls, telemetry, wheel, pedals, and BEV minimap."""
-        del step_index, events
+        del step_index
         state = self.state
+        state.drive_input.apply(events)
+        command = state.drive_input.command()
         telemetry = state.telemetry
         self._ensure_sprites()
         imgui.set_next_window_pos(
@@ -115,39 +121,37 @@ class InteractiveDriveUILoop(ImGuiUILoop[InteractiveDriveUIState]):
             if telemetry is None:
                 imgui.text("Waiting for the first driving block...")
                 speed_mph = 0.0
-                steering_rad = 0.0
-                throttle = 0.0
-                brake = 0.0
                 reverse = False
             else:
                 speed_mph = abs(telemetry.speed_mps) * 2.236936
-                steering_rad = telemetry.steering_rad
-                throttle = telemetry.throttle
-                brake = telemetry.brake
                 reverse = telemetry.reverse
                 imgui.text(f"Block {telemetry.blocks_generated}")
-                imgui.text(f"Input  {telemetry.input_source}")
+            imgui.text(f"Input  {state.drive_input.source()}")
             imgui.text(f"Speed  {speed_mph:5.1f} mph")
             imgui.text(f"Gear   {'R' if reverse else 'D'}")
-            imgui.text(f"Steer  {steering_rad:+.2f} rad")
-            self._progress(imgui, "Throttle", throttle)
-            self._progress(imgui, "Brake", brake)
+            imgui.text(f"Steer  {command.steer:+.2f}")
+            self._progress(imgui, "Throttle", command.throttle)
+            self._progress(imgui, "Brake", command.brake)
             imgui.image(
                 "steering-wheel",
-                self._wheel_pixels(steering_rad),
+                self._wheel_pixels(command.steer),
                 size=(138.0, 138.0),
             )
             imgui.same_line()
             imgui.image(
                 "brake-pedal",
-                state.sprites["brake_pressed" if brake > 0.05 else "brake_unpressed"],
+                state.sprites[
+                    "brake_pressed" if command.brake > 0.05 else "brake_unpressed"
+                ],
                 size=(64.0, 138.0),
             )
             imgui.same_line()
             imgui.image(
                 "throttle-pedal",
                 state.sprites[
-                    "throttle_pressed" if throttle > 0.05 else "throttle_unpressed"
+                    "throttle_pressed"
+                    if command.throttle > 0.05
+                    else "throttle_unpressed"
                 ],
                 size=(64.0, 138.0),
             )
@@ -273,11 +277,12 @@ class InteractiveDriveUILoop(ImGuiUILoop[InteractiveDriveUIState]):
             "brake_pressed",
             "brake_unpressed",
         ):
-            self.state.sprites[name] = _load_control_sprite(name)
+            size = (138, 138) if name == "steering_wheel" else (64, 138)
+            self.state.sprites[name] = _load_control_sprite(name, size)
 
-    def _wheel_pixels(self, steering_rad: float) -> np.ndarray[Any, np.dtype[np.uint8]]:
+    def _wheel_pixels(self, steering: float) -> np.ndarray[Any, np.dtype[np.uint8]]:
         state = self.state
-        angle = int(round(max(-90.0, min(90.0, steering_rad * 180.0))))
+        angle = int(round(max(-90.0, min(90.0, steering * 180.0))))
         if state.wheel_cache_pixels is None or state.wheel_cache_angle != angle:
             wheel = Image.fromarray(state.sprites["steering_wheel"], mode="RGBA")
             rotated = wheel.rotate(angle, resample=Image.Resampling.BICUBIC)
@@ -390,17 +395,18 @@ class InteractiveDriveApplication(ClipGT2VApplication):
             view_mode=self._config.view_mode,
             no_ui=self._config.no_ui,
         )
-        self._config = replace(
-            self._config,
-            app=replace(
-                self._config.app,
-                bev=replace(
-                    self._config.app.bev,
-                    enabled=True,
-                    show_ego_car=True,
+        if not self._config.no_ui:
+            self._config = replace(
+                self._config,
+                app=replace(
+                    self._config.app,
+                    bev=replace(
+                        self._config.app.bev,
+                        enabled=True,
+                        show_ego_car=True,
+                    ),
                 ),
-            ),
-        )
+            )
         if not self._interactive_scene_options:
             self._interactive_scene_options = _discover_scene_options(
                 self._config.app.scene_path
@@ -456,14 +462,19 @@ class InteractiveDriveApplication(ClipGT2VApplication):
         return InteractiveDriveSession(
             backend_factory=self._backend_factory,
             config=self._config,
-            desc=session_desc,
+            desc=replace(
+                session_desc,
+                presentation_mode=PresentationMode.ONLY_PRESENT_NEWEST,
+            ),
             scene_loader=self._scene_loader,
             title=self._title,
             scene_options=options,
         )
 
 
-def _load_control_sprite(name: str) -> np.ndarray[Any, np.dtype[np.uint8]]:
+def _load_control_sprite(
+    name: str, size: tuple[int, int]
+) -> np.ndarray[Any, np.dtype[np.uint8]]:
     """Load one bundled wheel/pedal sprite as RGBA pixels."""
     asset = (
         resources.files("clipgt2v.interactive_drive")
@@ -472,7 +483,10 @@ def _load_control_sprite(name: str) -> np.ndarray[Any, np.dtype[np.uint8]]:
         .joinpath(f"{name}.png")
     )
     with asset.open("rb") as stream, Image.open(stream) as image:
-        return np.asarray(image.convert("RGBA"), dtype=np.uint8)
+        return np.asarray(
+            image.convert("RGBA").resize(size, Image.Resampling.LANCZOS),
+            dtype=np.uint8,
+        )
 
 
 def _discover_scene_options(

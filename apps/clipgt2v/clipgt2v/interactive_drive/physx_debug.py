@@ -10,7 +10,7 @@ from typing import Protocol
 
 import numpy as np
 import torch
-from ludus_renderer import CubePool, TimestampedScene
+from ludus_renderer import CUBE_FLAG_WIREFRAME, CubePool, TimestampedScene
 from clipgt2v.interactive_drive.types import PhysicsDebugFrame, PresentedFrame
 
 _ACTOR_FRONT_RGB = (1.0, 190.0 / 255.0, 58.0 / 255.0)
@@ -193,7 +193,7 @@ def build_physx_debug_cube_pool(
         ),
         scales=torch.as_tensor(scales, dtype=torch.float32, device=device),
         colors=torch.as_tensor(colors, dtype=torch.float32, device=device),
-        render_flags=0,
+        render_flags=CUBE_FLAG_WIREFRAME,
     )
 
 

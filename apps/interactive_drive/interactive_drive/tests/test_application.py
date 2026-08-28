@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -30,9 +31,11 @@ from interactive_drive import (
 )
 
 from flashdreams.runtime_v2.user_input_event import (
+    GamepadUserInputEvent,
     KeyboardInputState,
     KeyboardUserInputEvent,
 )
+from flashdreams.runtime_v2.session_desc import PresentationMode
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
 
 pytestmark = pytest.mark.ci_cpu
@@ -44,6 +47,7 @@ class _FakeUI:
     def __init__(self) -> None:
         self.text_lines: list[str] = []
         self.images: list[str] = []
+        self.progress: list[float] = []
 
     @staticmethod
     def ImVec2(x: float, y: float) -> tuple[float, float]:
@@ -80,7 +84,8 @@ class _FakeUI:
         pass
 
     def progress_bar(self, fraction: float, size: Any) -> None:
-        del fraction, size
+        del size
+        self.progress.append(fraction)
 
     def image(
         self,
@@ -94,6 +99,28 @@ class _FakeUI:
 
     def separator(self) -> None:
         pass
+
+
+def test_gamepad_left_stick_only_steers() -> None:
+    event = GamepadUserInputEvent(
+        timestamp=np.uint64(0),
+        axes=(-0.5, -1.0),
+    )
+
+    command = clipgt_app_module._gamepad_command(event)
+
+    assert command is not None
+    assert command.steer == 0.5
+    assert command.throttle == 0.0
+    assert command.brake == 0.0
+
+
+def test_control_sprites_load_at_hud_resolution() -> None:
+    wheel = app_module._load_control_sprite("steering_wheel", (138, 138))
+    pedal = app_module._load_control_sprite("throttle_pressed", (64, 138))
+
+    assert wheel.shape == (138, 138, 4)
+    assert pedal.shape == (138, 64, 4)
 
 
 def test_model_step_publishes_bev_channel_and_complete_elapsed_time(
@@ -217,6 +244,31 @@ def test_clipgt2v_no_ui_registers_only_the_model_loop(tmp_path: Path) -> None:
     app.init(["--scene", str(scene), "--no-ui"])
 
     session = app.create_session(app.session_desc())
+    session.init()
+
+    assert isinstance(session.model_loop, ClipGT2VModelLoop)
+    assert session._registered_ui_loop is None
+
+
+def test_interactive_drive_no_ui_skips_ui_and_bev(tmp_path: Path) -> None:
+    scene = tmp_path / "local.usdz"
+    scene.touch()
+    app = InteractiveDriveApplication(
+        defaults=ClipGT2VApplicationDefaults(width=1168, height=640)
+    )
+
+    desc = app.session_desc()
+    assert (desc.video_width, desc.video_height) == (1168, 640)
+
+    app.init(["--scene", str(scene), "--no-ui"])
+
+    assert app._config is not None
+    assert app._config.no_ui is True
+    assert app._config.app.raster.resolution_wh == (1168, 640)
+    assert app._config.app.bev.enabled is False
+    assert app._config.app.bev.show_ego_car is False
+
+    session = app.create_session(desc)
     session.init()
 
     assert isinstance(session.model_loop, ClipGT2VModelLoop)
@@ -367,8 +419,17 @@ def test_interactive_drive_owns_a_separate_session_and_ui_loop(
     app = InteractiveDriveApplication()
     app.init(["--scene", str(scene)])
 
-    session = app.create_session(app.session_desc())
+    session = app.create_session(
+        replace(
+            app.session_desc(),
+            presentation_mode=PresentationMode.ONLY_PRESENT_NEW,
+        )
+    )
     assert isinstance(session, InteractiveDriveSession)
+    assert (
+        session.session_desc.presentation_mode
+        is PresentationMode.ONLY_PRESENT_NEWEST
+    )
     assert app._config is not None
     assert app._config.app.bev.enabled is True
     assert app._config.app.bev.show_ego_car is True
@@ -388,6 +449,9 @@ def test_interactive_drive_hud_draws_imgui_controls_and_images(
     session.init()
     loop = session.ui_loop
     assert isinstance(loop, InteractiveDriveUILoop)
+    model_loop = session.model_loop
+    assert isinstance(model_loop, ClipGT2VModelLoop)
+    assert loop.state.drive_input is not model_loop.state.drive_input
     pixel = np.zeros((4, 4, 4), dtype=np.uint8)
     loop.state.sprites = {
         "steering_wheel": pixel,
@@ -399,29 +463,28 @@ def test_interactive_drive_hud_draws_imgui_controls_and_images(
     loop.state.set_drive_telemetry(
         DriveTelemetry(
             speed_mps=12.0,
-            steering_rad=0.2,
-            throttle=0.8,
-            brake=0.0,
             reverse=False,
             blocks_generated=7,
             frames_in_chunk=13,
             scene_path=scene,
             variant="default",
             postprocess_enabled=True,
-            input_source="wheel/gamepad",
             model_loop_ms=123.45,
             bev_frame=np.zeros((8, 8, 3), dtype=np.uint8),
         )
     )
-    ui = _FakeUI()
+    steering_events = UserInputEvents(
+        [GamepadUserInputEvent(timestamp=np.uint64(0), axes=(-0.2, -1.0))]
+    )
 
-    loop.step_ui(ui, 0, UserInputEvents([]))
+    ui = _FakeUI()
+    loop.step_ui(ui, 0, steering_events)
 
     assert "Block 7" in ui.text_lines
     assert "Input  wheel/gamepad" in ui.text_lines
     assert "Speed   26.8 mph" in ui.text_lines
     assert "Gear   D" in ui.text_lines
-    assert "Steer  +0.20 rad" in ui.text_lines
+    assert "Steer  +0.20" in ui.text_lines
     assert "frames_in_chunk: 13" in ui.text_lines
     assert "model_loop_ms: 123.5" in ui.text_lines
     assert ui.images == [
@@ -430,8 +493,15 @@ def test_interactive_drive_hud_draws_imgui_controls_and_images(
         "throttle-pedal",
         "bev-minimap",
     ]
+    assert ui.progress == [0.0, 0.0]
     # Positive steering means left, so the HUD wheel rotates counterclockwise.
     assert loop.state.wheel_cache_angle == 36
+    assert model_loop.state.drive_input.command().throttle == 0.0
+
+    model_loop._apply_events(steering_events)
+
+    assert model_loop.state.drive_input.command().throttle == 0.0
+    assert model_loop.state.drive_input.command().steer == 0.2
 
 
 def test_interactive_drive_view_button_cycles_all_three_views(
@@ -483,13 +553,14 @@ def test_number_keys_select_rgb_hdmap_and_physx_views() -> None:
             )
         )
         assert state.view_mode == expected
-        assert key not in state.pressed_keys
+        assert key not in state.drive_input.pressed_keys
 
 
 def test_frame_view_selects_rgb_hdmap_and_physx_streams() -> None:
     hdmap = np.full((2, 3, 3), 11, dtype=np.uint8)
     rgb = np.full((2, 3, 3), 22, dtype=np.uint8)
-    physx = np.full((2, 3, 3), 33, dtype=np.uint8)
+    physx = np.zeros((2, 3, 3), dtype=np.uint8)
+    physx[0, 0] = 33
     chunk: Any = SimpleNamespace(
         frames=[
             SimpleNamespace(
@@ -502,7 +573,9 @@ def test_frame_view_selects_rgb_hdmap_and_physx_streams() -> None:
 
     assert clipgt_app_module._frame_chunk_tensor(chunk, "rgb")[0, 0, 0, 0] == 22
     assert clipgt_app_module._frame_chunk_tensor(chunk, "hdmap")[0, 0, 0, 0] == 11
-    assert clipgt_app_module._frame_chunk_tensor(chunk, "physx")[0, 0, 0, 0] == 33
+    physx_view = clipgt_app_module._frame_chunk_tensor(chunk, "physx")
+    assert physx_view[0, 0, 0, 0] == 33
+    assert physx_view[0, 0, 0, 1] == 11
 
 
 def test_interactive_drive_discovers_scenes_and_weather_variants(
