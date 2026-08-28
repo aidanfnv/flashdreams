@@ -422,14 +422,11 @@ def test_interactive_drive_owns_a_separate_session_and_ui_loop(
     session = app.create_session(
         replace(
             app.session_desc(),
-            presentation_mode=PresentationMode.ONLY_PRESENT_NEW,
+            presentation_mode=PresentationMode.ON_DEMAND,
         )
     )
     assert isinstance(session, InteractiveDriveSession)
-    assert (
-        session.session_desc.presentation_mode
-        is PresentationMode.ONLY_PRESENT_NEWEST
-    )
+    assert session.session_desc.presentation_mode is PresentationMode.CONTINUOUS
     assert app._config is not None
     assert app._config.app.bev.enabled is True
     assert app._config.app.bev.show_ego_car is True

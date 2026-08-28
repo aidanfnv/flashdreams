@@ -464,7 +464,7 @@ class InteractiveDriveApplication(ClipGT2VApplication):
             config=self._config,
             desc=replace(
                 session_desc,
-                presentation_mode=PresentationMode.ONLY_PRESENT_NEWEST,
+                presentation_mode=PresentationMode.CONTINUOUS,
             ),
             scene_loader=self._scene_loader,
             title=self._title,
