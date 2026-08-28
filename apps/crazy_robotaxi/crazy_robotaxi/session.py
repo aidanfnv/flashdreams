@@ -72,6 +72,9 @@ class ModelState:
     last_video: torch.Tensor | None = None
     last_bev: torch.Tensor | None = None
     last_pose: np.ndarray | None = None
+    last_speed_mps: float = 0.0
+    """Speed aligned with the retained terminal presentation frame."""
+
     blocks_generated: int = 0
     finished: bool = False
     realtime_miss_count: int = 0
@@ -249,6 +252,7 @@ class ModelState:
         self.last_video = None
         self.last_bev = None
         self.last_pose = None
+        self.last_speed_mps = 0.0
         self.input_transition_count = 0
         self.input_ignored_event_count = 0
         self.input_coalesced_transition_count = 0
@@ -325,6 +329,9 @@ class CrazyRobotaxiModelLoop(IModelLoop[ModelState]):
             engine_step = generated.engine
             game_frames = engine_step.game_frames
             poses = engine_step.trajectory.rig_poses_world
+            speeds_mps = tuple(
+                vehicle.speed_mps for vehicle in engine_step.trajectory.vehicle_states
+            )
             bev = engine_step.condition.bev_tchw
             metrics = dict(generated.metrics)
             metrics.update(
@@ -345,12 +352,14 @@ class CrazyRobotaxiModelLoop(IModelLoop[ModelState]):
             state.last_video = video[-1:].detach()
             state.last_bev = None if bev is None else bev[-1:].detach()
             state.last_pose = poses[-1].copy()
+            state.last_speed_mps = speeds_mps[-1]
         else:
             if state.last_video is None or state.last_pose is None:
                 raise RuntimeError("Terminal game state has no generated frame")
             video = state.last_video
             game_frames = (snapshot,)
             poses = state.last_pose[None, ...]
+            speeds_mps = (state.last_speed_mps,)
             bev = state.last_bev
             metrics = {}
             transition_timestamps_us = (None,) * int(video.shape[0])
@@ -359,6 +368,7 @@ class CrazyRobotaxiModelLoop(IModelLoop[ModelState]):
             video,
             game_frames,
             poses,
+            speeds_mps=speeds_mps,
             transition_timestamps_us=transition_timestamps_us,
             input_transition_count=state.input_transition_count,
             input_ignored_event_count=state.input_ignored_event_count,
