@@ -282,7 +282,10 @@ class IUILoop(ILoop[StateT], ABC):
         self._presentation_manager = presentation_manager
 
     @final
-    def presented_model_frame(self, channel_index: int = 0) -> Tensor | None:
+    def presented_model_frame(
+        self,
+        channel_index: int = 0,
+    ) -> Tensor | None:
         """Return the current frame from one model-result channel.
 
         Args:
@@ -295,6 +298,8 @@ class IUILoop(ILoop[StateT], ABC):
 
         Raises:
             IndexError: The presented result has no such channel.
+            ValueError: The presentation stream is on a different CUDA device
+                from the presented result.
         """
         return self._presentation_manager.presented_frame(channel_index)
 
@@ -305,6 +310,10 @@ class IUILoop(ILoop[StateT], ABC):
         Returns:
             One ``[C, H, W]`` frame per channel, bottom channel first, or an
             empty tuple before the first model result has been presented.
+
+        Raises:
+            ValueError: The presentation stream is on a different CUDA device
+                from a presented result.
         """
         return self._presentation_manager.presented_frames()
 

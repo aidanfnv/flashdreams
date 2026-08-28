@@ -22,21 +22,38 @@ uv run --no-sync flashdreams-run-v2 cam2v-lingbot \
     --mode webrtc --host 0.0.0.0 --port 8089 -- --example-data
 ```
 
-The command prints the browser URL. Use `W`/`S` to move, `A`/`D` to yaw,
-`Q`/`E` to strafe, and `I`/`K` to pitch the generated camera.
+The command prints the browser URL. Use `W`/`S` to move, `A`/`D` or
+`J`/`L` to yaw, `Q`/`E` to strafe, and `I`/`K` to pitch the generated
+camera. The retained SlangPy overlay lists active controls, and the arrow keys
+mirror `W`/`A`/`S`/`D`.
 
-The application logs warmup-excluded `steady_state_fps` and a per-block timing
-breakdown. `model_step_wall_s` includes input preparation, generation,
-finalization, and CUDA completion. The pipeline profiling log provides its GPU
-stage breakdown.
+The UI/write path owns presentation pacing, and WebRTC sends each available
+frame as soon as aiortc requests it rather than applying another pacer.
+`window.write` synchronously converts the UI result and materializes owned
+`VideoFrame` objects. SlangPy rendering/composition and the WebRTC sink use
+separate high-priority CUDA streams joined by a readiness event. The sender
+retains two queued, unsent frames in FIFO order and evicts the oldest queued
+frame on overflow. A frame already dequeued for the sender or encoder is
+committed and does not count against that capacity. Write MP4 when the output
+must be frame-exact.
+
+Model metrics retain warmup-excluded `steady_state_fps` and step wall time.
+`model_step_wall_s` includes input preparation, generation, finalization, and
+CUDA completion. One concise console line reports that synchronized wall time
+and chunk FPS for every warmup and steady AR step. The interactive
+specialization disables the pipeline's device-wide synchronous stage profiler
+so model and presentation streams can overlap; use an explicit profiling run
+when a GPU-stage breakdown is needed. The UI's recent model-rate value is the
+wall-time-weighted throughput of AR steps whose completions fall in the trailing
+two seconds. It excludes between-step pacing and presentation and reports no
+recent output after two seconds without a completion.
 
 For custom inputs, pass `--image-path` and `--intrinsic-path`. Also pass either
 `--world-scale` directly or `--pose-path` so the application can infer the
 translation normalizer. Input resolution and example-data downloads are owned
 by this package and do not use the legacy Lingbot runtime/schema path.
 
-Use `--log-every-blocks N` to reduce log frequency and `--warmup-blocks N` to
-change the five-block default warmup exclusion.
+Use `--warmup-blocks N` to change the five-block default warmup exclusion.
 
 ## Tests
 

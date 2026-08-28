@@ -27,9 +27,6 @@ _MODEL_FPS_WINDOW_SECONDS = 2.0
 """Wall-time window used to estimate generated-frame throughput."""
 
 
-# TODO: Move this to a util file, and simplify the time to advance() logic
-# This is needed because we need to know the real model throughput so that we can
-# pace the model frame presentation to make the playback smooth.
 class _PresentationClock:
     """Schedule model-frame advances at recent model throughput."""
 
@@ -118,8 +115,6 @@ class _PresentationClock:
         self._observations.clear()
 
     def _update_frame_interval(self, now: float) -> None:
-        # This function observes the model's FPS over the most recent 2 seconds
-        # and update the _frame_interval accordingly.
         cutoff = now - _MODEL_FPS_WINDOW_SECONDS
         while len(self._observations) >= 3 and self._observations[1][0] <= cutoff:
             self._observations.popleft()
@@ -164,8 +159,8 @@ def run_session(
 ) -> None:
     """Run a session's UI and model loops.
 
-    The calling io-thread handles the window and UI. A model-generation-thread
-    runs the model loop. Returns when the client closes the window, when the
+    The calling UI thread handles the window and UI. A model thread runs the
+    model loop. Returns when the client closes the window, when the
     model loop has finished and no generated frames are still waiting, or when
     either loop fails.
 
@@ -213,25 +208,27 @@ def run_session(
     cleanup_failures: list[BaseException] = []
     attempted_output_sinks: list[OutputSink] = []
 
-    def collect_input() -> UserInputEvents:
+    def collect_input() -> None:
         events = window.get_user_input_events()
         event_buffer.append(events)
         if _contains(events, CloseUserInputEvent):
             stop.set()
-        return events
 
-    def run_ui_once() -> StepResult | None:
+    def run_ui_once() -> None:
+        """Run one UI step and write every result it produces."""
         if ui_loop is None:
-            return None
+            return
         events, generation = event_buffer.read(_UI_READER_ID)
-        step_index = ui_loop._begin_run(events, generation)
-        if step_index is None or stop.is_set():
-            return None
-        result = ui_loop.step(step_index, events)
-        if result is not None and not isinstance(result, StepResult):
-            raise TypeError("A UI loop must return StepResult or None.")
-        ui_loop._finish_run(result)
-        return result
+        with presentation_manager.presentation_context():
+            step_index = ui_loop._begin_run(events, generation)
+            if step_index is None or stop.is_set():
+                return
+            result = ui_loop.step(step_index, events)
+            if result is not None and not isinstance(result, StepResult):
+                raise TypeError("A UI loop must return StepResult or None.")
+            ui_loop._finish_run(result)
+        if result is not None:
+            window.write(result)
 
     def publish_model_results(
         generation: int,
@@ -251,20 +248,17 @@ def run_session(
     def tick_ui() -> None:
         assert ui_loop is not None
         generation = event_buffer.generation
-        now = time.monotonic()
         model_advanced = False
+        now = time.monotonic()
         if presentation_clock.is_due(now, generation):
             model_advanced, _ = presentation_manager.advance(generation)
-            if model_advanced:
-                presentation_clock.mark_advanced(now)
-        if (
-            session_desc.presentation_mode is PresentationMode.ONLY_PRESENT_NEW
-            and not model_advanced
-        ):
+        if model_advanced:
+            presentation_clock.mark_advanced(now)
+            run_ui_once()
             return
-        result = run_ui_once()
-        if result is not None:
-            window.write(result)
+        if session_desc.presentation_mode is PresentationMode.ON_DEMAND:
+            return
+        run_ui_once()
 
     try:
         session.init()
@@ -327,11 +321,17 @@ def run_session(
             except BaseException as error:
                 cleanup_failures.append(error)
 
+        try:
+            presentation_manager.close()
+        except BaseException as error:
+            cleanup_failures.append(error)
         cleanup_failures.extend(session._shutdown_registered_loops())
-        presentation_manager.clear()
-        event_buffer.unregister(_UI_READER_ID)
-        event_buffer.unregister(_MODEL_READER_ID)
-        event_buffer.clear()
+        try:
+            event_buffer.unregister(_UI_READER_ID)
+            event_buffer.unregister(_MODEL_READER_ID)
+            event_buffer.clear()
+        except BaseException as error:
+            cleanup_failures.append(error)
 
         for output_sink in attempted_output_sinks:
             try:

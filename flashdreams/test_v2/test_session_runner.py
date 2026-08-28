@@ -5,6 +5,7 @@
 
 import logging
 import threading
+import time
 
 import pytest
 import torch
@@ -49,11 +50,15 @@ def test_session_modes_are_independent() -> None:
         BackpressureMode.DROP_OLDEST,
     ]
     assert list(PresentationMode) == [
-        PresentationMode.ONLY_PRESENT_NEW,
-        PresentationMode.ONLY_PRESENT_NEWEST,
+        PresentationMode.ON_DEMAND,
+        PresentationMode.CONTINUOUS,
     ]
+    assert [mode.value for mode in PresentationMode] == ["on_demand", "continuous"]
+    for legacy_value in ("only_present_new", "only_present_newest"):
+        with pytest.raises(ValueError):
+            PresentationMode(legacy_value)
     assert SessionDesc().backpressure_mode is BackpressureMode.BLOCK
-    assert SessionDesc().presentation_mode is PresentationMode.ONLY_PRESENT_NEWEST
+    assert SessionDesc().presentation_mode is PresentationMode.CONTINUOUS
 
 
 def test_presentation_clock_paces_frames_and_reanchors_after_a_stall() -> None:
@@ -387,7 +392,7 @@ class RecordingClientWindow(IClientWindow):
 def _session_desc(
     *,
     backpressure_mode: BackpressureMode = BackpressureMode.BLOCK,
-    presentation_mode: PresentationMode = PresentationMode.ONLY_PRESENT_NEW,
+    presentation_mode: PresentationMode = PresentationMode.ON_DEMAND,
     ui_fps: int = 100,
     model_fps: int = 1,
 ) -> SessionDesc:
@@ -487,7 +492,7 @@ def test_continuous_ui_processes_input_while_model_generation_waits() -> None:
 
     session = SlowModelSession(
         _session_desc(
-            presentation_mode=PresentationMode.ONLY_PRESENT_NEWEST,
+            presentation_mode=PresentationMode.CONTINUOUS,
             ui_fps=100,
             model_fps=1,
         ),
@@ -610,13 +615,15 @@ def test_composite_normalizes_uint8_bottom_for_floating_rgba_overlay() -> None:
     assert torch.equal(composited, expected)
 
 
-def test_composite_rejects_unrelated_dtype_mismatch() -> None:
+def test_composite_converts_floating_overlay_to_bottom_dtype() -> None:
     manager = PresentationManager()
     bottom = torch.zeros((3, 1, 1), dtype=torch.float64)
     overlay = torch.zeros((4, 1, 1), dtype=torch.float32)
 
-    with pytest.raises(ValueError, match="same device and dtype"):
-        manager.composite(bottom, overlay)
+    composited = manager.composite(bottom, overlay)
+
+    assert composited.dtype is bottom.dtype
+    assert torch.equal(composited, bottom)
 
 
 def test_default_ui_presents_each_frame_from_a_model_chunk() -> None:
@@ -675,7 +682,7 @@ def test_default_ui_does_not_redraw_an_unchanged_model_frame() -> None:
 
     session = DefaultUISession(
         _session_desc(
-            presentation_mode=PresentationMode.ONLY_PRESENT_NEW,
+            presentation_mode=PresentationMode.ON_DEMAND,
             ui_fps=100,
             model_fps=30,
         ),
@@ -782,7 +789,7 @@ def test_run_session_resets_the_session_and_the_step_index() -> None:
     ]
     assert calls == ["session.reset", "session.step(0)", "session.step(1)"]
     assert log.calls.index("session.reset") < log.calls.index("session.step(0)")
-    # A reset restarts the index without granting extra steps.
+    # A reset restarts both loops without granting extra model steps.
     assert [result.step_index for result in window.results] == [0, 1]
 
 
@@ -817,7 +824,7 @@ def test_run_session_lets_a_reset_restart_a_finished_session() -> None:
     run_session(session, window, steps=3)
 
     # Finished before the run began, so without the reset nothing would be
-    # generated. It is applied first, and the session runs its length again.
+    # generated. It is applied before the session runs its length again.
     assert [result.step_index for result in window.results] == [0]
     assert "session.reset" in log.calls
 
@@ -931,7 +938,57 @@ def test_equality_eval_preserves_every_frame_when_model_is_faster() -> None:
     ]
 
 
-def test_ONLY_PRESENT_NEW_runs_ui_once_per_new_frame() -> None:
+def test_ui_stall_does_not_burst_multiple_frames_per_input_tick() -> None:
+    log = CallLog()
+
+    class FourFrameSession(FakeSession):
+        def step(self, step_index: int, events: UserInputEvents) -> StepResult:
+            del events
+            self._log.record(f"session.step({step_index})")
+            return StepResult(
+                step_index=step_index,
+                output=torch.arange(4, dtype=torch.float32).reshape(1, 1, 4, 1, 1),
+                frame_count=4,
+                output_layout=self.session_desc.output_layout,
+            )
+
+    class FirstWriteStalls(RecordingClientWindow):
+        def __init__(self, call_log: CallLog) -> None:
+            super().__init__(call_log)
+            self._first_write = True
+
+        def write(self, result: StepResult) -> None:
+            if self._first_write:
+                self._first_write = False
+                time.sleep(0.05)
+            super().write(result)
+
+    window = FirstWriteStalls(log)
+    run_session(
+        FourFrameSession(_session_desc(ui_fps=100, model_fps=100), log),
+        window,
+        steps=1,
+    )
+
+    assert [result.output[0, 0, 0, 0, 0].item() for result in window.results] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+    writes_per_input_tick: list[int] = []
+    writes = 0
+    for call in log.calls:
+        if call == "window.get_user_input_events":
+            writes_per_input_tick.append(writes)
+            writes = 0
+        elif call.startswith("window.write("):
+            writes += 1
+    writes_per_input_tick.append(writes)
+    assert max(writes_per_input_tick) == 1
+
+
+def test_on_demand_runs_ui_once_per_new_frame() -> None:
     log = CallLog()
     session = FakeSession(_session_desc(ui_fps=1_000, model_fps=20), log)
     window = RecordingClientWindow(log)
@@ -945,11 +1002,11 @@ def test_ONLY_PRESENT_NEW_runs_ui_once_per_new_frame() -> None:
     ]
 
 
-def test_only_present_newest_runs_ui_eagerly_when_ui_is_faster() -> None:
+def test_continuous_runs_ui_eagerly_when_ui_is_faster() -> None:
     log = CallLog()
     session = FakeSession(
         _session_desc(
-            presentation_mode=PresentationMode.ONLY_PRESENT_NEWEST,
+            presentation_mode=PresentationMode.CONTINUOUS,
             ui_fps=1_000,
             model_fps=20,
         ),

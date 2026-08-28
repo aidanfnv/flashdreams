@@ -17,7 +17,11 @@ from .session import (
     Cam2VSessionConfig,
     CameraControlInput,
 )
-from .ui import Cam2VSlangPyUILoop, Cam2VUIState, Cam2VUIStatus
+from .ui import (
+    Cam2VSlangPyUILoop,
+    Cam2VUIState,
+    Cam2VUIStatus,
+)
 
 __all__ = [
     "Cam2VApplication",

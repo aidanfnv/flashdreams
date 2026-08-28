@@ -170,7 +170,9 @@ def _add_session_arguments(parser: argparse.ArgumentParser) -> None:
         choices=tuple(PresentationMode),
         default=None,
         metavar="{" + ",".join(mode.value for mode in PresentationMode) + "}",
-        help="Whether the UI presents eagerly or only for new model frames.",
+        help=(
+            "Whether the UI runs continuously or only for newly selected model frames."
+        ),
     )
 
 

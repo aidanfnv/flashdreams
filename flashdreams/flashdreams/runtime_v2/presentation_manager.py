@@ -5,21 +5,27 @@
 
 import queue
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import torch
 from torch import Tensor
 from torch.nn import functional as F
 
+from flashdreams.runtime_v2.cuda_utils import resolve_cuda_device
 from flashdreams.runtime_v2.session_desc import BackpressureMode
 from flashdreams.runtime_v2.step_result import StepResult
 from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
+_PRESENTATION_STREAM_PRIORITY = -1
+"""Prefer short presentation work over queued model kernels."""
+
 
 class PresentationManager:
-    """Buffer model output for a session's io-thread.
+    """Buffer model output for a session's UI thread.
 
-    The model-generation-thread publishes a chunk of channels per step into a
-    bounded queue; the io-thread calls :meth:`advance` once per tick to move to
+    The model thread publishes a chunk of channels per step into a bounded
+    queue; the UI thread calls :meth:`advance` once per tick to move to
     the next frame. A chunk holding several frames is walked frame by frame
     before another is taken, so a step that generated twelve frames is
     presented over twelve ticks rather than eleven being skipped.
@@ -28,22 +34,44 @@ class PresentationManager:
     full. Chunks that could not be kept are counted in
     :attr:`dropped_for_space` and :attr:`discarded_at_reset` rather than lost
     silently, one count per chunk however many frames it held.
+
+    :meth:`presentation_context` keeps the complete UI presentation path on one
+    high-priority CUDA stream, separate from model inference.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, device: torch.device | None = None) -> None:
+        """Create a frame manager and its CUDA presentation stream.
+
+        Args:
+            device: Presentation device; ``None`` or a CPU device does not
+                create a CUDA stream.
+
+        Raises:
+            ValueError: ``device`` is neither a CPU nor CUDA device.
+        """
         self._buffer: queue.Queue[tuple[int, list[StepResult]]] = queue.Queue(maxsize=2)
         self._backpressure_mode = BackpressureMode.BLOCK
         self._stop = threading.Event()
         self._put_timeout = 1.0 / 30.0
+        self._counter_lock = threading.Lock()
         self._generation = 0
         self._presented_chunk: list[StepResult] | None = None
         self._frame_index = -1
         self._presented_frame_count = 0
-        self.dropped_for_space = 0
-        """Chunks dropped because the UI could not keep up with the model."""
-
-        self.discarded_at_reset = 0
-        """Chunks discarded for having been generated before a reset."""
+        self._dropped_for_space = 0
+        self._discarded_at_reset = 0
+        self._presentation_stream: torch.cuda.Stream | None = None
+        if device is not None:
+            device = torch.device(device)
+            if device.type not in ("cpu", "cuda"):
+                raise ValueError("Presentation requires a CPU or CUDA device.")
+            if device.type == "cuda":
+                device = resolve_cuda_device(device)
+                with torch.cuda.device(device):
+                    self._presentation_stream = torch.cuda.Stream(
+                        device=device,
+                        priority=_PRESENTATION_STREAM_PRIORITY,
+                    )
 
     def configure(
         self,
@@ -82,7 +110,7 @@ class PresentationManager:
     ) -> None:
         """Add one completed model step to the presentation queue.
 
-        Called on the model-generation-thread. ``BLOCK`` waits here when the
+        Called on the model thread. ``BLOCK`` waits here when the
         queue is full, until there is room or the session stops;
         ``DROP_OLDEST`` evicts instead and returns.
 
@@ -114,10 +142,35 @@ class PresentationManager:
             except queue.Full:
                 continue
 
+    @contextmanager
+    def presentation_context(self) -> Iterator[None]:
+        """Make the manager-owned presentation stream current for a UI step.
+
+        Managers without a CUDA presentation stream use the caller's current
+        context.
+
+        Yields:
+            Control while the presentation stream is current.
+        """
+        stream = self._presentation_stream
+        if stream is None:
+            yield
+            return
+        device = resolve_cuda_device(stream.device)
+        with torch.cuda.device(device), torch.cuda.stream(stream):
+            yield
+
+    def close(self) -> None:
+        """Finish presentation work and release buffered output."""
+        if self._presentation_stream is not None:
+            self._presentation_stream.synchronize()
+        self.clear()
+        self._presentation_stream = None
+
     def advance(self, generation: int) -> tuple[bool, list[StepResult] | None]:
         """Move to the next model frame, if one is available.
 
-        Called on the io-thread, once per tick. A ``generation`` other than the
+        Called on the UI thread, once per tick. A ``generation`` other than the
         last one seen drops what is being presented, so nothing generated before
         a reset survives it.
 
@@ -159,8 +212,52 @@ class PresentationManager:
         """Return frames selected one-by-one in the current generation."""
         return self._presented_frame_count
 
-    def presented_frame(self, channel_index: int) -> Tensor | None:
-        """Return the current ``[C, H, W]`` frame from one model channel."""
+    @property
+    def dropped_for_space(self) -> int:
+        """Return chunks dropped because presentation could not keep up."""
+        with self._counter_lock:
+            return self._dropped_for_space
+
+    @property
+    def discarded_at_reset(self) -> int:
+        """Return chunks discarded because they predate a reset."""
+        with self._counter_lock:
+            return self._discarded_at_reset
+
+    @property
+    def buffered_chunk_count(self) -> int:
+        """Return model chunks waiting in the bounded publish queue.
+
+        The chunk currently being presented is intentionally excluded: only
+        this queue depth controls whether :meth:`publish` blocks. As with
+        :meth:`queue.Queue.qsize`, the value is a thread-safe point-in-time
+        snapshot and may change immediately after it is returned.
+        """
+        return self._buffer.qsize()
+
+    @property
+    def buffer_capacity(self) -> int:
+        """Return the maximum number of chunks that may wait to be presented."""
+        return self._buffer.maxsize
+
+    def presented_frame(
+        self,
+        channel_index: int,
+    ) -> Tensor | None:
+        """Return one frame ordered before the presentation stream.
+
+        Args:
+            channel_index: Model-result channel to read.
+
+        Returns:
+            The current ``[C, H, W]`` frame, or ``None`` before presentation
+            starts.
+
+        Raises:
+            IndexError: The presented result has no such channel.
+            ValueError: The presentation stream and output use different CUDA
+                devices.
+        """
         if self._presented_chunk is None:
             return None
         try:
@@ -170,12 +267,15 @@ class PresentationManager:
                 f"Presented chunk has {len(self._presented_chunk)} channels; "
                 f"channel {channel_index} does not exist."
             ) from error
+        result.wait_for_output(self._presentation_stream)
         return _frame_at(result, self._frame_index)
 
     def presented_frames(self) -> tuple[Tensor, ...]:
-        """Return the current frames from bottom channel to top channel."""
+        """Return all current frames ordered before the presentation stream."""
         if self._presented_chunk is None:
             return ()
+        for result in self._presented_chunk:
+            result.wait_for_output(self._presentation_stream)
         return tuple(
             _frame_at(result, self._frame_index) for result in self._presented_chunk
         )
@@ -188,16 +288,51 @@ class PresentationManager:
                 black. A byte frame beneath a floating-point RGBA overlay is
                 moved and normalized to the overlay's device and dtype.
             top: ``[C, H, W]`` frame to draw. Four channels is RGBA and blends;
-                anything else replaces.
+                anything else replaces. Floating-point input is converted to
+                ``bottom.dtype`` when needed.
 
         Returns:
             An RGB ``[3, H, W]`` frame.
 
         Raises:
-            ValueError: The frames have an unsupported device or dtype mismatch,
-                or either is not a presentable frame.
+            ValueError: The frames disagree about size or device, use
+                incompatible dtypes, do not use the presentation-stream device,
+                or are not presentable.
         """
-        return _composite_frame(bottom, top)
+        stream = self._presentation_stream
+        caller_stream: torch.cuda.Stream | None = None
+        if stream is not None:
+            device = resolve_cuda_device(stream.device)
+            frames = (top,) if bottom is None else (bottom, top)
+            if any(
+                not frame.is_cuda or resolve_cuda_device(frame.device) != device
+                for frame in frames
+            ):
+                raise ValueError(
+                    "Composited frames must use the presentation-stream device."
+                )
+
+            caller_stream = torch.cuda.current_stream(device)
+            if caller_stream != stream:
+                stream.wait_stream(caller_stream)
+                for frame in frames:
+                    frame.record_stream(stream)
+
+        with self.presentation_context():
+            if (
+                bottom is not None
+                and bottom.is_floating_point()
+                and top.is_floating_point()
+                and top.dtype != bottom.dtype
+            ):
+                top = top.to(dtype=bottom.dtype)
+            output = _composite_frame(bottom, top)
+
+        if stream is not None and caller_stream != stream:
+            assert caller_stream is not None
+            caller_stream.wait_stream(stream)
+            output.record_stream(caller_stream)
+        return output
 
     def has_pending_frames(self) -> bool:
         """Return whether another model frame is ready."""
@@ -227,7 +362,8 @@ class PresentationManager:
             except queue.Full:
                 try:
                     self._buffer.get_nowait()
-                    self.dropped_for_space += 1
+                    with self._counter_lock:
+                        self._dropped_for_space += 1
                 except queue.Empty:
                     continue
 
@@ -241,10 +377,12 @@ class PresentationManager:
             except queue.Empty:
                 return selected
             if chunk_generation != generation:
-                self.discarded_at_reset += 1
+                with self._counter_lock:
+                    self._discarded_at_reset += 1
                 continue
             if selected is not None:
-                self.dropped_for_space += 1
+                with self._counter_lock:
+                    self._dropped_for_space += 1
             selected = chunk
             if not latest:
                 return selected

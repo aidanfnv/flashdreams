@@ -3,19 +3,75 @@
 
 const peer = new RTCPeerConnection();
 const controls = peer.createDataChannel("controls");
+const pointerControls = peer.createDataChannel("pointer-controls");
 peer.addTransceiver("video", {direction: "recvonly"});
 const video = document.getElementById("video");
 const status = document.getElementById("status");
-const pressedKeys = new Set();
+const pressedKeys = new Map();
 const pressedButtons = new Set();
 const gamepadSnapshots = new Map();
 let lastPointerPosition = {x: 0, y: 0};
+
+const MAX_NONCRITICAL_BUFFER_BYTES = 4 * 1024;
+
+let pendingPointerMove = null;
+let pointerMoveHandle = null;
+let pendingWheel = null;
+let wheelHandle = null;
+
+const cancelPendingPointerMove = () => {
+  if (pointerMoveHandle !== null) {
+    window.cancelAnimationFrame(pointerMoveHandle);
+    pointerMoveHandle = null;
+  }
+  pendingPointerMove = null;
+};
 
 const showStatus = (message, isError = false) => {
   status.hidden = false;
   status.textContent = message;
   status.classList.toggle("error", isError);
 };
+
+const send = (payload, channel = controls) => {
+  if (channel.readyState !== "open") {
+    return false;
+  }
+  try {
+    channel.send(JSON.stringify(payload));
+    return true;
+  } catch (error) {
+    console.debug("Unable to send WebRTC control message.", error);
+    return false;
+  }
+};
+
+const sendInput = (
+  payload,
+  {
+    channel = controls,
+    dropIfCongested = false,
+  } = {},
+) => {
+  if (dropIfCongested && channel.bufferedAmount > MAX_NONCRITICAL_BUFFER_BYTES) {
+    return false;
+  }
+  return send(payload, channel);
+};
+
+controls.addEventListener("message", event => {
+  if (typeof event.data !== "string") {
+    return;
+  }
+  try {
+    const payload = JSON.parse(event.data);
+    if (payload?.type === "error") {
+      console.warn(`WebRTC server: ${payload.message ?? "unknown error"}`);
+    }
+  } catch (error) {
+    console.warn("Ignored malformed WebRTC control response.", error);
+  }
+});
 
 peer.ontrack = event => {
   video.srcObject = event.streams[0] ?? new MediaStream([event.track]);
@@ -29,27 +85,46 @@ video.addEventListener("playing", () => {
 });
 
 peer.addEventListener("connectionstatechange", () => {
-  if (peer.connectionState === "connected" && video.readyState < 2) {
-    showStatus("Connected. Waiting for the first video frame…");
-  } else if (["failed", "disconnected", "closed"].includes(peer.connectionState)) {
+  if (peer.connectionState === "connected") {
+    if (video.readyState < 2) {
+      showStatus("Connected. Waiting for the first video frame…");
+    } else {
+      status.hidden = true;
+    }
+  } else if (["failed", "closed"].includes(peer.connectionState)) {
     showStatus(`WebRTC connection ${peer.connectionState}.`, true);
   }
 });
 
-const send = payload => {
-  if (controls.readyState === "open") {
-    controls.send(JSON.stringify(payload));
-  }
-};
-
 window.addEventListener("keydown", event => {
-  pressedKeys.add(event.key);
-  send({type: "keyboard", key: event.key, pressed: true});
+  const keyId = event.code || event.key;
+  if (pressedKeys.has(keyId)) {
+    return;
+  }
+  const wasSent = sendInput({
+    type: "keyboard",
+    key: event.key,
+    pressed: true,
+  });
+  if (wasSent) {
+    pressedKeys.set(keyId, event.key);
+  }
 });
 
 window.addEventListener("keyup", event => {
-  pressedKeys.delete(event.key);
-  send({type: "keyboard", key: event.key, pressed: false});
+  const keyId = event.code || event.key;
+  const pressedKey = pressedKeys.get(keyId);
+  if (pressedKey === undefined) {
+    return;
+  }
+  const wasSent = sendInput({
+    type: "keyboard",
+    key: pressedKey,
+    pressed: false,
+  });
+  if (wasSent) {
+    pressedKeys.delete(keyId);
+  }
 });
 
 video.tabIndex = 0;
@@ -84,63 +159,137 @@ const pointerPosition = event => {
 
 video.addEventListener("pointermove", event => {
   lastPointerPosition = pointerPosition(event);
-  send({type: "mouse", action: "move", ...lastPointerPosition});
+  pendingPointerMove = lastPointerPosition;
+  if (pointerMoveHandle !== null) {
+    return;
+  }
+  pointerMoveHandle = window.requestAnimationFrame(() => {
+    pointerMoveHandle = null;
+    const position = pendingPointerMove;
+    pendingPointerMove = null;
+    if (position === null) {
+      return;
+    }
+    sendInput(
+      {
+        type: "mouse",
+        action: "move",
+        ...position,
+      },
+      {
+        channel: pointerControls,
+        dropIfCongested: true,
+      },
+    );
+  });
 });
 
 video.addEventListener("pointerdown", event => {
   video.focus();
   video.setPointerCapture(event.pointerId);
-  pressedButtons.add(event.button);
+  cancelPendingPointerMove();
   lastPointerPosition = pointerPosition(event);
-  send({
-    type: "mouse",
-    action: "button",
-    ...lastPointerPosition,
-    button: event.button,
-    pressed: true,
-  });
+  const wasSent = sendInput(
+    {
+      type: "mouse",
+      action: "button",
+      ...lastPointerPosition,
+      button: event.button,
+      pressed: true,
+    },
+    {channel: pointerControls},
+  );
+  if (wasSent) {
+    pressedButtons.add(event.button);
+  }
   event.preventDefault();
 });
 
 video.addEventListener("pointerup", event => {
-  pressedButtons.delete(event.button);
+  if (!pressedButtons.has(event.button)) {
+    return;
+  }
+  cancelPendingPointerMove();
   lastPointerPosition = pointerPosition(event);
-  send({
-    type: "mouse",
-    action: "button",
-    ...lastPointerPosition,
-    button: event.button,
-    pressed: false,
-  });
+  const wasSent = sendInput(
+    {
+      type: "mouse",
+      action: "button",
+      ...lastPointerPosition,
+      button: event.button,
+      pressed: false,
+    },
+    {channel: pointerControls},
+  );
+  if (wasSent) {
+    pressedButtons.delete(event.button);
+  }
   event.preventDefault();
 });
 
 video.addEventListener("pointercancel", () => {
-  for (const button of pressedButtons) {
-    send({
-      type: "mouse",
-      action: "button",
-      ...lastPointerPosition,
-      button,
-      pressed: false,
-    });
+  cancelPendingPointerMove();
+  for (const button of [...pressedButtons]) {
+    const wasSent = sendInput(
+      {
+        type: "mouse",
+        action: "button",
+        ...lastPointerPosition,
+        button,
+        pressed: false,
+      },
+      {channel: pointerControls},
+    );
+    if (wasSent) {
+      pressedButtons.delete(button);
+    }
   }
-  pressedButtons.clear();
 });
 
 video.addEventListener("wheel", event => {
-  send({
-    type: "mouse",
-    action: "wheel",
-    ...pointerPosition(event),
-    wheel_x: -Math.sign(event.deltaX),
-    wheel_y: -Math.sign(event.deltaY),
-  });
+  const position = pointerPosition(event);
+  if (pendingWheel === null) {
+    pendingWheel = {
+      position,
+      wheelX: 0,
+      wheelY: 0,
+    };
+  }
+  pendingWheel.position = position;
+  pendingWheel.wheelX += -Math.sign(event.deltaX);
+  pendingWheel.wheelY += -Math.sign(event.deltaY);
+  if (wheelHandle === null) {
+    wheelHandle = window.requestAnimationFrame(() => {
+      wheelHandle = null;
+      const wheel = pendingWheel;
+      pendingWheel = null;
+      if (wheel === null) {
+        return;
+      }
+      sendInput(
+        {
+          type: "mouse",
+          action: "wheel",
+          ...wheel.position,
+          wheel_x: wheel.wheelX,
+          wheel_y: wheel.wheelY,
+        },
+        {
+          channel: pointerControls,
+          dropIfCongested: true,
+        },
+      );
+    });
+  }
   event.preventDefault();
 }, {passive: false});
 
-video.addEventListener("focus", () => send({type: "focus", focused: true}));
-video.addEventListener("blur", () => send({type: "focus", focused: false}));
+video.addEventListener("focus", () => {
+  sendInput({type: "focus", focused: true});
+});
+video.addEventListener("blur", () => {
+  sendInput({type: "focus", focused: false});
+});
 
 const touchPayload = (event, touch, action) => {
   const bounds = renderedVideoBounds();
@@ -163,7 +312,7 @@ for (const [domEvent, action] of [
 ]) {
   video.addEventListener(domEvent, event => {
     for (const touch of event.changedTouches) {
-      send(touchPayload(event, touch, action));
+      sendInput(touchPayload(event, touch, action));
     }
     event.preventDefault();
   }, {passive: false});
@@ -182,12 +331,12 @@ const gamepadPayload = (gamepad, action = "state") => ({
 
 window.addEventListener("gamepadconnected", event => {
   gamepadSnapshots.delete(event.gamepad.index);
-  send(gamepadPayload(event.gamepad, "connected"));
+  sendInput(gamepadPayload(event.gamepad, "connected"));
 });
 
 window.addEventListener("gamepaddisconnected", event => {
   gamepadSnapshots.delete(event.gamepad.index);
-  send(gamepadPayload(event.gamepad, "disconnected"));
+  sendInput(gamepadPayload(event.gamepad, "disconnected"));
 });
 
 const pollGamepads = () => {
@@ -199,7 +348,7 @@ const pollGamepads = () => {
     const snapshot = JSON.stringify(payload);
     if (gamepadSnapshots.get(gamepad.index) !== snapshot) {
       gamepadSnapshots.set(gamepad.index, snapshot);
-      send(payload);
+      sendInput(payload);
     }
   }
   window.requestAnimationFrame(pollGamepads);
@@ -207,23 +356,37 @@ const pollGamepads = () => {
 window.requestAnimationFrame(pollGamepads);
 
 window.addEventListener("blur", () => {
-  for (const key of pressedKeys) {
-    send({type: "keyboard", key, pressed: false});
-  }
-  pressedKeys.clear();
-  for (const button of pressedButtons) {
-    send({
-      type: "mouse",
-      action: "button",
-      ...lastPointerPosition,
-      button,
+  cancelPendingPointerMove();
+  for (const [keyId, key] of [...pressedKeys]) {
+    const wasSent = sendInput({
+      type: "keyboard",
+      key,
       pressed: false,
     });
+    if (wasSent) {
+      pressedKeys.delete(keyId);
+    }
   }
-  pressedButtons.clear();
+  for (const button of [...pressedButtons]) {
+    const wasSent = sendInput(
+      {
+        type: "mouse",
+        action: "button",
+        ...lastPointerPosition,
+        button,
+        pressed: false,
+      },
+      {channel: pointerControls},
+    );
+    if (wasSent) {
+      pressedButtons.delete(button);
+    }
+  }
 });
 
-window.addEventListener("beforeunload", () => send({type: "close"}));
+window.addEventListener("beforeunload", () => {
+  sendInput({type: "close"});
+});
 
 const waitForIceGatheringComplete = async () => {
   if (peer.iceGatheringState === "complete") {

@@ -3,13 +3,14 @@
 
 """WebRTC client window for the v2 runtime."""
 
-import queue
+import threading
+from collections import deque
 
 from flashdreams.api_v2.client_window import IClientWindow
 from flashdreams.runtime_v2.serving.webrtc_server import WebRTCServer
 from flashdreams.runtime_v2.session_desc import SessionDesc
 from flashdreams.runtime_v2.step_result import StepResult
-from flashdreams.runtime_v2.user_input_event import UserInputEvent
+from flashdreams.runtime_v2.user_input_event import MouseUserInputEvent, UserInputEvent
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
 
 
@@ -42,7 +43,8 @@ class WebRTCClientWindow(IClientWindow):
             port: Listening port. Zero asks the operating system to choose one.
             startup_timeout_seconds: Maximum time to wait for server startup.
         """
-        self._input_events: queue.SimpleQueue[UserInputEvent] = queue.SimpleQueue()
+        self._input_events: deque[UserInputEvent] = deque()
+        self._input_lock = threading.Lock()
         self.server = WebRTCServer(
             host=host,
             port=port,
@@ -51,7 +53,17 @@ class WebRTCClientWindow(IClientWindow):
 
         def handle_input(event: UserInputEvent) -> None:
             """Buffer one backend event for the ``InputSource`` protocol."""
-            self._input_events.put(event)
+            with self._input_lock:
+                if (
+                    isinstance(event, MouseUserInputEvent)
+                    and event.action == "move"
+                    and self._input_events
+                    and isinstance(self._input_events[-1], MouseUserInputEvent)
+                    and self._input_events[-1].action == "move"
+                ):
+                    self._input_events[-1] = event
+                else:
+                    self._input_events.append(event)
 
         self.server.register_input_callback(handle_input)
 
@@ -69,20 +81,22 @@ class WebRTCClientWindow(IClientWindow):
         Returns:
             Buffered browser events in timestamp order, each returned once.
         """
-        events = []
-        while True:
-            try:
-                events.append(self._input_events.get_nowait())
-            except queue.Empty:
-                return UserInputEvents(events)
+        with self._input_lock:
+            events = list(self._input_events)
+            self._input_events.clear()
+        return UserInputEvents(events)
 
     def write(self, result: StepResult) -> None:
-        """Implement ``OutputSink.write`` by delivering a result to the browser.
+        """Materialize and queue one UI-composited frame for the browser.
 
         Args:
-            result: Generated frames matching the opened session.
+            result: One UI-composited frame matching the opened session.
         """
         self.server.write(result)
+
+    def metrics_snapshot(self) -> dict[str, float | int]:
+        """Return sender-queue diagnostics."""
+        return self.server.metrics_snapshot()
 
     def close(self) -> None:
         """Implement ``OutputSink.close`` by releasing WebRTC resources."""

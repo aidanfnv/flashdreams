@@ -52,8 +52,8 @@ Each loop is registered with the state it owns, and the call returns the loop:
 
 | Runs on | Calls | Owns | Frame rate |
 | --- | --- | --- | --- |
-| The io-thread | `IUILoop.step` | UI-loop state, `run_session` state | `frames_per_second_for_ui` |
-| The model-generation-thread | `IModelLoop.step` | Model-loop state and model logic | `frames_per_second_for_step` |
+| The UI thread | `IUILoop.step` | UI-loop state, `run_session` state | `frames_per_second_for_ui` |
+| The model thread | `IModelLoop.step` | Model-loop state and model logic | `frames_per_second_for_step` |
 
 ```python
 self.register_model_loop(ModelLoop, state=ModelState(self._desc))
@@ -63,13 +63,13 @@ self.register_model_loop(ModelLoop, state=ModelState(self._desc))
 comes from the session description: the model loop steps at
 `frames_per_second_for_step`, and the UI ticks at `frames_per_second_for_ui`.
 
-The io-thread initially selects frames from model chunks at
-`frames_per_second_for_step`, then uses the model-generation-thread's rolling
-two-second output rate. This paces chunked output evenly without tying input
-and UI redraws to model throughput.
-`PresentationMode.ONLY_PRESENT_NEWEST` lets an `IUILoop` redraw continuously;
-`PresentationMode.ONLY_PRESENT_NEW` runs it only when the selected model frame
-changes.
+The UI thread initially selects frames from model chunks at
+`frames_per_second_for_step`, then uses the model thread's rolling two-second
+output rate. This paces chunked output evenly without tying input and UI redraws
+to model throughput.
+`PresentationMode.CONTINUOUS` lets an `IUILoop` redraw every UI tick;
+`PresentationMode.ON_DEMAND` runs it only when the selected model frame changes.
+Interactive or clock-driven UIs should use continuous presentation.
 
 ## Loops
 
@@ -120,6 +120,12 @@ Output sinks read floating-point frames as `[-1, 1]` and integer frames as
 `[0, 255]`. No `SessionDesc` setting remaps this; a UI loop that works in some
 other range converts before returning.
 
+CUDA results may cross from a producer stream to a dedicated presentation or
+transfer stream. Constructing a `StepResult` for CUDA output automatically
+records readiness on the current stream, so construct the result while the
+actual producer stream is current. The presentation manager and runtime sinks
+call `StepResult.wait_for_output` on their consumer stream before reading it.
+
 ## A minimal application
 
 Using the default UI loop, so there is only a model loop to write:
@@ -165,24 +171,23 @@ This loop runs forever. Override `is_finished` to make it stop.
 ## Writing a UI loop
 
 `SessionDesc.backpressure_mode` handles the model-generation-loop producing
-frames faster than the io-thread can consume them:
+frames faster than the UI thread can consume them:
 
 - `BackpressureMode.BLOCK` waits when the presentation queue is full. This keeps
-  every generated frame and can slow the model-generation-thread to the
-  io-thread's pace.
+  every generated frame and can slow the model thread to the UI thread's pace.
 - `BackpressureMode.DROP_OLDEST` discards old buffered work so the UI can catch
   up to newer output. This favors low latency over preserving every frame.
 
 `SessionDesc.presentation_mode` handles the UI loop ticking faster than the
 model-generation-loop produces frames:
 
-- `PresentationMode.ONLY_PRESENT_NEWEST` runs the UI every tick and may reuse
+- `PresentationMode.CONTINUOUS` runs the UI every tick and may reuse
   the newest generated model frame.
-- `PresentationMode.ONLY_PRESENT_NEW` runs the UI only after the presentation
-  manager advances to a new model frame.
+- `PresentationMode.ON_DEMAND` runs the UI after the presentation manager
+  advances to a new model frame.
 
-Use `PresentationMode.ONLY_PRESENT_NEW` with `BackpressureMode.BLOCK` when every
-generated frame must be presented exactly once and in order.
+Use `PresentationMode.ON_DEMAND` with `BackpressureMode.BLOCK` when every
+generated model frame must be selected and written exactly once in order.
 
 For full immediate Dear ImGui controls drawn over model output, subclass
 `ImGuiUILoop` from `flashdreams.runtime_v2.imgui_ui_loop` and implement
