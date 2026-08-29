@@ -76,7 +76,7 @@ SPDX-License-Identifier: Apache-2.0
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Local Demo Benchmarks" href="local_benchmarks.html" />
-    <link rel="prev" title="Runner slugs and demo launch dispatch" href="runner_slugs.html" />
+    <link rel="prev" title="Application slugs and model adapter dispatch" href="runner_slugs.html" />
   
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
@@ -342,9 +342,10 @@ SPDX-License-Identifier: Apache-2.0
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="index.html">Developer Guides</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="inference_pipeline_overview.html">Inference pipeline overview</a></li>
 <li class="toctree-l2"><a class="reference internal" href="config_system.html">Config system</a></li>
-<li class="toctree-l2"><a class="reference internal" href="runner_slugs.html">Runner slugs and demo launch dispatch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="runner_slugs.html">Application slugs and model adapter dispatch</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">Add a new method</a></li>
 <li class="toctree-l2"><a class="reference internal" href="local_benchmarks.html">Local Demo Benchmarks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="flashdreams_accelerated.html">flashdreams.accelerated</a></li>
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../api/index.html">CLI and API Reference</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -426,7 +427,7 @@ SPDX-License-Identifier: Apache-2.0
 <h1>Add a new method<a class="headerlink" href="#add-a-new-method" title="Link to this heading">#</a></h1>
 <p>Before you start adding a new method, we highly recommend reading the <a class="reference internal" href="inference_pipeline_overview.html"><span class="doc">Inference pipeline overview</span></a> and <a class="reference internal" href="config_system.html"><span class="doc">Config system</span></a> pages first to obtain an overview of the system architecture.</p>
 <p>FlashDreams aims to offer researchers a codebase that they can utilize to extend and develop novel video and world models. Our vision is for users to establish a <em>standalone repository</em> that imports FlashDreams as a dependency and overrides pipeline components (such as encoders, transformers, or decoders) to cater to specific functionality requirements of the new approach. We encourage you to maintain your method externally rather than pushing changes directly into the <a class="reference external" href="https://github.com/NVIDIA/flashdreams/tree/main/integrations">integrations/</a> directory of this repository.</p>
-<p>However, if any of your new features require modifications to the core FlashDreams infra or introduce generally useful components (such as the <code class="xref py py-mod docutils literal notranslate"><span class="pre">TAEHV</span> <span class="pre">decoder</span></code>), we encourage you to submit a PR to enable others to benefit from them.</p>
+<p>However, if any of your new features require modifications to the core FlashDreams infra or introduce generally useful components (such as the <a class="reference internal" href="../api/integrations.html#module-flashdreams.recipes.taehv" title="flashdreams.recipes.taehv"><code class="xref py py-mod docutils literal notranslate"><span class="pre">TAEHV</span> <span class="pre">decoder</span></code></a>), we encourage you to submit a PR to enable others to benefit from them.</p>
 <section id="file-structure">
 <h2>File structure<a class="headerlink" href="#file-structure" title="Link to this heading">#</a></h2>
 <p>We recommend the following file structure for your new method:</p>
@@ -575,7 +576,7 @@ See the existing model pages under the <a class="reference external" href="https
       <i class="fa-solid fa-angle-left"></i>
       <div class="prev-next-info">
         <p class="prev-next-subtitle">previous</p>
-        <p class="prev-next-title">Runner slugs and demo launch dispatch</p>
+        <p class="prev-next-title">Application slugs and model adapter dispatch</p>
       </div>
     </a>
     <a class="right-next"
