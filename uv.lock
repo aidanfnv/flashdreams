@@ -26,12 +26,14 @@ members = [
     "flashdreams-causal-forcing",
     "flashdreams-color-fade",
     "flashdreams-cosmos-predict2",
+    "flashdreams-dos-client",
     "flashdreams-fastvideo-causal-wan22",
     "flashdreams-flashvsr",
     "flashdreams-hy-worldplay",
     "flashdreams-imgui-ui-demo",
     "flashdreams-interactive-drive-v2",
     "flashdreams-lingbot",
+    "flashdreams-model-service",
     "flashdreams-null-model",
     "flashdreams-omnidreams",
     "flashdreams-red-screen",
@@ -1229,6 +1231,26 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
+name = "flashdreams-dos-client"
+version = "0.1.0"
+source = { editable = "apps/dos_client" }
+dependencies = [
+    { name = "flashdreams-model-service" },
+]
+
+[package.optional-dependencies]
+model-service = [
+    { name = "flashdreams-model-service", extra = ["flashdreams"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "flashdreams-model-service", editable = "apps/model_service" },
+    { name = "flashdreams-model-service", extras = ["flashdreams"], marker = "extra == 'model-service'", editable = "apps/model_service" },
+]
+provides-extras = ["model-service"]
+
+[[package]]
 name = "flashdreams-fastvideo-causal-wan22"
 version = "0.1.0"
 source = { editable = "integrations_v2/fastvideo_causal_wan22" }
@@ -1361,6 +1383,24 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "flashdreams-model-service"
+version = "0.1.0"
+source = { editable = "apps/model_service" }
+
+[package.optional-dependencies]
+flashdreams = [
+    { name = "flashdreams" },
+    { name = "flashdreams-t2v" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "flashdreams", marker = "extra == 'flashdreams'", editable = "flashdreams" },
+    { name = "flashdreams-t2v", marker = "extra == 'flashdreams'", editable = "apps/t2v" },
+]
+provides-extras = ["flashdreams"]
 
 [[package]]
 name = "flashdreams-null-model"

@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashdreams-model-service"
+version = "0.1.0"
+description = "Shared model catalog, inference service, and RGB protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+flashdreams = ["flashdreams", "flashdreams-t2v"]
+
+[project.scripts]
+flashdreams-model-stub = "model_service.stub_service:main"
+flashdreams-model-service = "model_service.flashdreams_backend:main"
+flashdreams-model-probe = "model_service.probe:main"
+
+[tool.uv.sources]
+flashdreams = { workspace = true }
+flashdreams-t2v = { workspace = true }
+
+[tool.setuptools.packages.find]
+include = ["model_service*"]

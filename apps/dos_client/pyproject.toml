@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashdreams-dos-client"
+version = "0.1.0"
+description = "Native DOS FlashDreams client and emulator launcher"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["flashdreams-model-service"]
+
+[project.scripts]
+flashdreams-dos-vbe = "dos_client.vbe_demo:main"
+flashdreams-dos-client = "dos_client.emulator:main"
+
+[tool.setuptools.packages.find]
+include = ["dos_client*"]
+
+[project.optional-dependencies]
+model-service = ["flashdreams-model-service[flashdreams]"]
+
+[tool.uv.sources]
+flashdreams-model-service = { workspace = true }
+
+[tool.uv]
+managed = true

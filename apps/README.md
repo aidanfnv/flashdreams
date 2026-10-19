@@ -29,6 +29,10 @@ model or its adapter belongs in `integrations_v2/<model>/tests/`.
 - `action2v` — world models driven by direct action input.
 - `v2v` — video-to-video, used for super-resolution.
 - `interactive_drive` — the interactive driving demo, keyboard and wheel input.
+- `model_service` — shared model catalog, FlashDreams T2V and synthetic
+  inference services, RGB protocol, and a Python diagnostic client.
+- `dos_client` — a catalog-driven DJGPP TCP client with local VBE display/MP4
+  encoding, build tools, and an emulator launcher.
 - `crazy_robotaxi` — the driving game built on `omnidreams_game_engine`.
 - `omnidreams_game_engine` — reusable simulation, authored-map, physics, and
   conditioning components. It owns no runtime loop, so it is a library the

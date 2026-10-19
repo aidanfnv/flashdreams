@@ -73,6 +73,58 @@ Optional integration: integrations_v2/flashvsr
 ninja                  Apache-2.0   https://github.com/ninja-build/ninja
 
 ================================================================================
+Optional application: apps/dos_client (native DOS executable)
+================================================================================
+
+lwIP 2.2.1             BSD-3-Clause https://github.com/lwip-tcpip/lwip
+    Pinned to 77dcd25a72509eb83f72b033d219b1d40cd8eb95
+    (STABLE-2_2_1_RELEASE). The native network client statically links the
+    unmodified TCP/IPv4/Ethernet core and DHCP support, using NO_SYS=1.
+    Source is built from a separate checkout, not vendored into this repository.
+    The build collects upstream file-specific copyright/license notices into
+    client/build/THIRDP.TXT for distribution alongside FLSHDRMS.EXE.
+
+cJSON 1.7.19           MIT https://github.com/DaveGamble/cJSON
+    Pinned to 6d9f2443ab071f86e5d9b43025a40929ec41c46c. The native client
+    statically links unmodified cJSON for model-service JSON metadata.
+    Source is built from a separate checkout; the upstream MIT notice is
+    reproduced in client/build/THIRDP.TXT.
+
+minih264              CC0-1.0 https://github.com/lieff/minih264
+    Pinned to b0baea7a80ef9d12da97301dd1099b8791b5ba43. The native client
+    statically links the plain C H.264 encoder for local MP4 output, with
+    single-layer AVC and no threading. The build extends only the encoder's
+    platform declaration to recognize DJGPP as little-endian, in a generated
+    header; the upstream source checkout and encoder logic are unchanged.
+    Source stays outside this repository. Its CC0 license is reproduced in
+    client/build/THIRDP.TXT.
+
+minimp4               CC0-1.0 https://github.com/lieff/minimp4
+    Pinned to 2a3014a7753cfcba4442adeb469431967238fe6a. The native client
+    statically links the unmodified MP4 muxer and H.264 sample writer. Source
+    is built from a separate checkout, and its CC0 license is reproduced in
+    client/build/THIRDP.TXT.
+
+stb_image 2.30        MIT https://github.com/nothings/stb
+    Pinned to 2c980bb59875b0d32144a71867fbdebb2f77cd20. The native client
+    statically links the unmodified image decoder with only PNG and JPEG enabled
+    and SIMD disabled. Source stays in a separate checkout. The MIT option of
+    its dual license is selected and reproduced in client/build/THIRDP.TXT.
+
+DJGPP 2.05             https://www.delorie.com/djgpp/
+    The native display and network clients link unmodified DJGPP startup objects and
+    libc.a from the djcrx205.zip cross-development archive. DJ Delorie's
+    COPYING.DJ applies GPL/LGPL terms with runtime distribution exceptions;
+    individual BSD and other source files retain their original licenses.
+    Upstream licenses and source can be obtained from:
+    https://www.mirrorservice.org/sites/ftp.delorie.com/pub/djgpp/current/v2/djcrx205.zip
+    https://www.mirrorservice.org/sites/ftp.delorie.com/pub/djgpp/current/v2/djlsr205.zip
+
+    The compiler and runtime sources are downloaded into a separate local
+    build-djgpp checkout. Those sources and generated executables are not
+    redistributed in this repository.
+
+================================================================================
 Optional integration: integrations_v2/omnidreams
 ================================================================================
 
