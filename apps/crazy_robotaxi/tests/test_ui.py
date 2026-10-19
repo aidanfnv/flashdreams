@@ -58,15 +58,12 @@ from omnidreams_game_engine.types import CameraCalibration
 
 from flashdreams.api_v2.loop import IModelLoop
 from flashdreams.runtime_v2.presentation_manager import PresentationManager
-from flashdreams.runtime_v2.session_desc import SessionDesc
-from flashdreams.runtime_v2.step_result import StepResult
 from flashdreams.runtime_v2.user_input_event import (
     GamepadUserInputEvent,
     KeyboardInputState,
     KeyboardUserInputEvent,
 )
 from flashdreams.runtime_v2.user_input_events import UserInputEvents
-from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
 pytestmark = pytest.mark.ci_cpu
 
@@ -184,15 +181,22 @@ class _FakeFontAtlas:
     def __init__(self) -> None:
         self.loaded: list[tuple[str, float, object]] = []
 
-    def add_font_from_file_ttf(self, path: str, size: float) -> object:
-        font = object()
+    def add_font_from_file_ttf(
+        self, path: str, size: float, config: Any = None
+    ) -> object:
+        font = SimpleNamespace(flags=0, get_font_baked=lambda size: None)
         self.loaded.append((path, size, font))
         return font
 
 
 class _FakeImGui:
+    ImFontFlags_ = SimpleNamespace(lock_baked_sizes=8)
+    ImFontConfig = SimpleNamespace
     Cond_ = SimpleNamespace(always=1)
-    ChildFlags_ = SimpleNamespace(auto_resize_y=1, always_auto_resize=2)
+    ChildFlags_ = SimpleNamespace(
+        auto_resize_y=1, always_auto_resize=2, nav_flattened=4
+    )
+    PopupFlags_ = SimpleNamespace(any_popup_id=1)
     WindowFlags_ = SimpleNamespace(
         no_move=1,
         no_resize=2,
@@ -213,6 +217,7 @@ class _FakeImGui:
         item_spacing=4,
         frame_rounding=5,
         frame_padding=6,
+        scrollbar_size=7,
     )
     Col_ = SimpleNamespace(
         text=1,
@@ -283,7 +288,7 @@ class _FakeImGui:
         self.highlighted_rows: list[int] = []
         self.current_table: str | None = None
         self.current_table_column = 0
-        self.default_font = object()
+        self.default_font = SimpleNamespace(flags=0)
         self.current_font = self.default_font
         self.current_font_size = 14.0
         self.font_stack: list[tuple[object, float]] = []
@@ -321,7 +326,8 @@ class _FakeImGui:
         self.font_stack.append((self.current_font, self.current_font_size))
         if font is not None:
             self.current_font = font
-        self.current_font_size = size
+        if size > 0.0:
+            self.current_font_size = size
 
     def pop_font(self) -> None:
         self.current_font, self.current_font_size = self.font_stack.pop()
@@ -415,6 +421,17 @@ class _FakeImGui:
 
     def get_frame_height(self) -> float:
         return self.current_font_size + 16.0
+
+    @staticmethod
+    def is_any_item_active() -> bool:
+        return False
+
+    @staticmethod
+    def is_popup_open(*args: Any) -> bool:
+        return False
+
+    def text_wrapped(self, value: str) -> None:
+        self.text(value)
 
     @staticmethod
     def get_scroll_max_y() -> float:
@@ -1103,6 +1120,74 @@ def test_current_prompt_offsets_left_live_edit_overlays() -> None:
     assert imgui.window_positions["Live Edit"] == (14.0, prompt_bottom + 88.0)
 
 
+@pytest.mark.parametrize(
+    "width,height", [(320, 200), (640, 360), (640, 200), (1280, 720)]
+)
+@pytest.mark.parametrize("speed_mps", [0.0, 100.0])
+def test_speedometer_anchors_complete_block_with_scaled_edge_spacing(
+    width: int, height: int, speed_mps: float
+) -> None:
+    state = TaxiHudState(width, height, _calibration())
+    imgui = _FakeImGui()
+
+    state._draw_speed(imgui, speed_mps)
+
+    shadow, digits, unit = (
+        args for name, args in imgui.background_draw_list.commands if name == "text"
+    )
+    scale = min(width / 640, height / 360)
+    text_height = imgui.calc_text_size("mph").y
+    assert unit[-1] == "mph"
+    assert min(digits[2][0], unit[2][0]) == pytest.approx(24 * scale)
+    assert height - unit[2][1] - text_height == pytest.approx(26 * scale)
+    assert unit[2][1] - digits[2][1] - text_height == pytest.approx(2 * scale)
+    assert shadow[2] == pytest.approx(
+        (digits[2][0] + 3 * scale, digits[2][1] + 3 * scale)
+    )
+
+
+@pytest.mark.parametrize(
+    "width,height", [(320, 200), (640, 360), (640, 200), (1280, 720)]
+)
+@pytest.mark.parametrize("bev_width,bev_height", [(96, 96), (80, 40), (40, 80)])
+def test_bev_image_uses_scaled_window_padding_and_edge_margins(
+    width: int,
+    height: int,
+    bev_width: int,
+    bev_height: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = TaxiHudState(width, height, _calibration())
+    frame = build_hud_frames(
+        torch.zeros(1, 3, height, width),
+        (_snapshot(),),
+        np.eye(4, dtype=np.float32)[None],
+    )[0]
+    imgui = _FakeImGui()
+    popped = []
+
+    def padded_cursor() -> tuple[float, float]:
+        style, padding = imgui.pushed_style_vars[-1]
+        assert style == imgui.StyleVar_.window_padding
+        return tuple(
+            origin + inset
+            for origin, inset in zip(imgui.next_window_position, padding, strict=True)
+        )
+
+    monkeypatch.setattr(imgui, "get_cursor_screen_pos", padded_cursor)
+    monkeypatch.setattr(imgui, "pop_style_var", lambda count=1: popped.append(count))
+
+    state._draw_bev_window(imgui, torch.zeros(4, bev_height, bev_width), frame)
+
+    assert state._bev_rect is not None
+    top, left, image_height, image_width = state._bev_rect
+    scale = min(width / 640, height / 360)
+    assert width - left - image_width == pytest.approx(16 * scale, abs=0.5)
+    assert height - top - image_height == pytest.approx(16 * scale, abs=0.5)
+    assert imgui.pushed_style_vars[-1][1] == pytest.approx((8 * scale, 8 * scale))
+    assert popped == [1]
+
+
 def test_bev_compositor_uses_rgba_coverage_for_black_road_pixels() -> None:
     state = TaxiHudState(4, 4, _calibration())
     state._bev_rect = (0, 0, 4, 4)
@@ -1280,11 +1365,17 @@ def test_live_hud_draws_directly_over_the_game_frame() -> None:
         for name, args in imgui.background_draw_list.commands
         if name == "circle_filled"
     )
-    assert compass[0][1] == 110.0
+    status_panel = next(
+        args
+        for name, args in imgui.background_draw_list.commands
+        if name == "rect_filled"
+    )
+    assert status_panel[0][1] == 14.0
+    assert compass[0][1] - compass[1] == pytest.approx(status_panel[1][1] + 8.0)
 
 
 def test_prominent_gameplay_text_uses_droid_sans() -> None:
-    state = TaxiHudState(640, 360, _calibration())
+    state = TaxiHudState(640, 400, _calibration())
     state.publish(
         build_hud_frames(
             torch.zeros(1, 3, 360, 640),
@@ -1311,9 +1402,88 @@ def test_prominent_gameplay_text_uses_droid_sans() -> None:
     assert text_commands["27"][0] is droid_sans
     assert text_commands["mph"][0] is droid_sans
     assert (
-        text_commands["GAME 42.5s  PICKUP  25m  SCORE 1200  HIGH 9000"][0]
-        is imgui.default_font
+        text_commands["GAME 42.5s  PICKUP  25m  SCORE 1200  HIGH 9000"][0] is droid_sans
     )
+
+
+@pytest.mark.parametrize(
+    "width,height",
+    [
+        (320, 200),
+        (639, 400),
+        (640, 399),
+        (640, 400),
+        (1280, 720),
+    ],
+)
+@pytest.mark.parametrize("mode", ["taxi", "race"])
+def test_status_selects_font_for_display_resolution(
+    width: int, height: int, mode: str
+) -> None:
+    state = TaxiHudState(width, height, _calibration())
+    imgui = _FakeImGui()
+    if mode == "taxi":
+        state._draw_taxi_status(imgui, _snapshot())
+    else:
+        state._draw_race_status(imgui, _race_snapshot(session_state="awaiting_start"))
+    status = next(
+        args for name, args in imgui.background_draw_list.commands if name == "text"
+    )
+    [(path, _size, font)] = imgui.fonts.loaded
+    bitmap = width < 640 or height < 400
+    assert path.endswith("5x8.pcf.gz" if bitmap else "DroidSans.ttf")
+    if bitmap:
+        assert status[1] == 8.0
+        assert font.flags & imgui.ImFontFlags_.lock_baked_sizes
+    assert status[0] is font
+    assert state._text_font(imgui) is font
+    assert len(imgui.fonts.loaded) == 1
+    assert not imgui.font_stack
+
+
+def test_small_display_text_keeps_native_bitmap_size(tmp_path: Path) -> None:
+    state = TaxiHudState(
+        320,
+        200,
+        _calibration(),
+        settings_document=_settings_document(tmp_path / "config.yaml"),
+        control_documents=load_controls_documents(tmp_path / "controls"),
+    )
+    imgui = _FakeImGui()
+    state._menu_stage = "mode"
+    state.draw(imgui)
+    state._open_options()
+    state.draw(imgui)
+    state._menu_stage = "mode"
+    state._open_controls()
+    state.draw(imgui)
+    state._open_controls_device("keyboard")
+    state.draw(imgui)
+    state._draw_race_status(imgui, _race_snapshot())
+    state._draw_speed(imgui, 12.0)
+
+    [(bitmap_path, bitmap_size, bitmap), (heading_path, _size, droid)] = (
+        imgui.fonts.loaded
+    )
+    assert bitmap_path.endswith("5x8.pcf.gz") and bitmap_size == 8.0
+    assert heading_path.endswith("DroidSans.ttf")
+    headings = {"CRAZY ROBOTAXI", "OPTIONS", "CONTROLS", "KEYBOARD CONTROLS"}
+    assert headings <= {text for text, _font, _size in imgui.text_fonts}
+    for text, face, size in imgui.text_fonts:
+        if text in headings:
+            assert face is droid and size > 8.0
+        else:
+            assert face is bitmap and size == 8.0
+    overlay_text = [
+        args for name, args in imgui.background_draw_list.commands if name == "text"
+    ]
+    for args in overlay_text:
+        if args[-1] == "27":
+            assert args[0] is droid and args[1] == 28.0
+        else:
+            assert args[0] is bitmap and args[1] == 8.0
+    assert {args[-1] for args in overlay_text} >= {"27", "mph"}
+    assert not imgui.font_stack
 
 
 def test_compass_arrow_has_no_black_underlay() -> None:
@@ -1323,13 +1493,59 @@ def test_compass_arrow_has_no_black_underlay() -> None:
     state._draw_navigation_arrow(
         imgui,
         0.0,
-        center_y=198.0,
+        status_bottom=88.0,
         color_rgb=(118.0 / 255.0, 185.0 / 255.0, 0.0),
     )
 
     commands = imgui.background_draw_list.commands
     assert sum(name == "line" for name, _ in commands) == 1
     assert sum(name == "triangle_filled" for name, _ in commands) == 1
+
+
+@pytest.mark.parametrize(
+    "width,height",
+    [(640, 360), (320, 200), (640, 200), (320, 360), (160, 360), (1280, 720)],
+)
+@pytest.mark.parametrize("mode", ["taxi", "race"])
+@pytest.mark.parametrize("show_prompt", [False, True])
+def test_status_and_compass_share_scaled_top_margin_and_gap(
+    width: int, height: int, mode: str, show_prompt: bool
+) -> None:
+    state = TaxiHudState(width, height, _calibration(), show_current_prompt=show_prompt)
+    state._menu_stage = "game"
+    snapshot = (
+        _snapshot()
+        if mode == "taxi"
+        else _race_snapshot(session_state="awaiting_start")
+    )
+    state._current = build_hud_frames(
+        torch.zeros(1, 3, height, width),
+        (snapshot,),
+        np.eye(4, dtype=np.float32)[None],
+        current_prompt="A taxi driving through a city.",
+    )[0]
+    imgui = _FakeImGui()
+
+    state.draw(imgui)
+
+    commands = dict(imgui.background_draw_list.commands)
+    panel_top, panel_bottom = commands["rect_filled"][:2]
+    center, radius, _ = commands["circle_filled"]
+    scale = min(width / 640, height / 360)
+    if "Current Prompt" in imgui.windows:
+        prompt_bottom = (
+            imgui.window_positions["Current Prompt"][1]
+            + imgui.window_sizes["Current Prompt"][1]
+        )
+        assert panel_top[1] == pytest.approx(prompt_bottom + 8.0)
+    else:
+        assert panel_top[1] == pytest.approx(14 * scale)
+    assert center[0] == width / 2
+    assert radius == pytest.approx(42 * scale)
+    assert center[1] - radius == pytest.approx(panel_bottom[1] + 8 * scale)
+    assert center[1] + radius < height
+    tip = commands["triangle_filled"][0]
+    assert tip == pytest.approx((width / 2, center[1] - 30 * scale))
 
 
 def test_hud_animates_prepresentation_warmup_status() -> None:
@@ -1415,6 +1631,9 @@ def test_selection_menus_use_arcade_card_layout(tmp_path: Path) -> None:
     assert text_fonts["CRAZY ROBOTAXI"] is droid_sans
     assert text_fonts["SELECT MAP"] is droid_sans
     assert text_fonts["SELECT RACE COURSE"] is droid_sans
+    assert all(font is droid_sans for _text, font, _size in imgui.text_fonts)
+    assert imgui.current_font is imgui.default_font
+    assert not imgui.font_stack
     for title in (
         "Crazy Robotaxi - Select Game Mode",
         "Crazy Robotaxi - Select Map",
@@ -1975,12 +2194,16 @@ def test_explicit_race_mode_and_map_skip_to_course_screen() -> None:
     assert state._selected_map_option is option
 
 
-def test_menu_back_uses_styled_gamepad_cancel_button() -> None:
+@pytest.mark.parametrize(
+    "style,button,label",
+    [("Xbox", 1, "B"), ("PlayStation", 1, "CIRCLE"), ("Nintendo Switch", 0, "B")],
+)
+def test_menu_back_uses_styled_gamepad_cancel_button(style, button, label) -> None:
     state = TaxiHudState(
         640,
         360,
         _calibration(),
-        gamepad_button_style="Xbox",
+        gamepad_button_style=style,
     )
     state._selected_game_mode = "taxi"
     state._menu_stage = "map"
@@ -1991,7 +2214,7 @@ def test_menu_back_uses_styled_gamepad_cancel_button() -> None:
                 GamepadUserInputEvent(
                     timestamp=np.uint64(1),
                     action="state",
-                    pressed=(False, True),
+                    pressed=tuple(index == button for index in range(2)),
                 )
             ]
         )
@@ -2000,7 +2223,7 @@ def test_menu_back_uses_styled_gamepad_cancel_button() -> None:
     assert state._menu_stage == "mode"
     imgui = _FakeImGui()
     state.draw(imgui)
-    assert "ESC / B - EXIT" in imgui.windows["Crazy Robotaxi - Select Game Mode"]
+    assert f"ESC / {label} - EXIT" in imgui.windows["Crazy Robotaxi - Select Game Mode"]
 
 
 def test_gameplay_return_to_map_uses_rebindable_controls() -> None:
@@ -2413,7 +2636,10 @@ def test_taxi_results_card_draws_leaderboard_without_player_rank() -> None:
     text_fonts = {text: font for text, font, _size in imgui.text_fonts}
     assert text_fonts["GAME OVER"] is droid_sans
     assert text_fonts["001200"] is droid_sans
-    assert text_fonts["LEADERBOARD"] is imgui.default_font
+    assert text_fonts["LEADERBOARD"] is droid_sans
+    assert all(font is droid_sans for _text, font, _size in imgui.text_fonts)
+    assert imgui.current_font is imgui.default_font
+    assert not imgui.font_stack
     assert imgui.table_columns["##leaderboard"] == ["RANK", "DRIVER", "SCORE"]
     assert imgui.tables["##leaderboard"] == [
         ["#1", "ACE", "   2400"],
@@ -3179,3 +3405,29 @@ def test_saving_live_edit_that_disables_native_dit_shows_notice_before_restart(
         "NATIVE DIT ACCELERATION DISABLED FOR LIVE-EDIT FEATURES"
         not in menu_imgui.windows["Crazy Robotaxi - Select Game Mode"]
     )
+
+
+@pytest.mark.parametrize("width,height", [(320, 200), (640, 400), (800, 600)])
+def test_menus_use_native_display_coordinates(
+    width: int, height: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = TaxiHudState(width, height, _calibration())
+    state._menu_stage = "mode"
+    renderer = _Renderer(width, height)
+    loop = CrazyRobotaxiImGuiUILoop(width=width, height=height)
+    loop.renderer = renderer
+    loop.state = state
+    monkeypatch.setattr(loop, "_prepare_menu_navigation", lambda *_args: None)
+    observed = []
+    monkeypatch.setattr(
+        TaxiHudState,
+        "draw",
+        lambda self, *args, **kwargs: observed.append((self.width, self.height)),
+    )
+    loop._presentation_manager = PresentationManager()
+    loop.step_ui(renderer.ui, 0, UserInputEvents([]))
+    assert observed == [(width, height)]
+    assert (state.width, state.height) == (width, height)
+    state._menu_stage = "game"
+    loop.step_ui(renderer.ui, 1, UserInputEvents([]))
+    assert observed == [(width, height), (width, height)]

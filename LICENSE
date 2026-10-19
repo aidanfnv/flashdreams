@@ -19,6 +19,16 @@ FlashDreams is open-source software. Its licensing posture is:
         is licensed under the Zlib license. Full text:
         LICENSES/Zlib.txt.
 
+  * The 5×8 bitmap font at
+    apps/crazy_robotaxi/crazy_robotaxi/assets/fonts/5x8.pcf.gz
+    is public domain. The upstream declaration is reproduced at
+    LICENSES/LicenseRef-Public-Domain.txt.
+
+  * The optional DOSBox-X emulator patch at
+    apps/dos_stunt/emulator/dosbox-x-unix-ethernet.patch
+    is licensed under GPL-2.0-or-later. Full text:
+    LICENSES/GPL-2.0-or-later.txt. It is not linked into DOSRX.EXE.
+
 Each first-party source file carries an inline SPDX license
 identifier; the REUSE 3.3 manifest at REUSE.toml fills the gaps for
 files (configuration, assets, generated outputs) that cannot

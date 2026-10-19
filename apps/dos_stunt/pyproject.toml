@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashdreams-dos-stunt"
+version = "0.1.0"
+description = "DOS VGA display server for the general FlashDreams frame stream"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = ["flashdreams", "numpy>=1.24,<2.5", "pillow>=10"]
+
+[project.scripts]
+flashdreams-dos-server = "dos_stunt.dos_server:main"
+flashdreams-dos-demo = "dos_stunt.run_demo:main"
+flashdreams-dos-ethernet = "dos_stunt.launch_ethernet:main"
+
+[project.entry-points."flashdreams.client_windows_v2"]
+stream = "dos_stunt.stream_mode:StreamMode"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-manual-marker>=2.0", "crazy-robotaxi"]
+
+[tool.uv.sources]
+flashdreams = { workspace = true }
+crazy-robotaxi = { workspace = true }
+
+[tool.setuptools.packages.find]
+include = ["dos_stunt*"]
+
+[tool.setuptools.package-data]
+dos_stunt = ["dosbox-ne2000.conf"]
+
+[tool.uv]
+managed = true

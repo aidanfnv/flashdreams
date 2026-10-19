@@ -26,6 +26,7 @@ members = [
     "flashdreams-causal-forcing",
     "flashdreams-color-fade",
     "flashdreams-cosmos-predict2",
+    "flashdreams-dos-stunt",
     "flashdreams-fastvideo-causal-wan22",
     "flashdreams-flashvsr",
     "flashdreams-hy-worldplay",
@@ -1225,6 +1226,35 @@ requires-dist = [
     { name = "mediapy", specifier = ">=1.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "torchvision", specifier = ">=0.24" },
+]
+provides-extras = ["dev"]
+
+[[package]]
+name = "flashdreams-dos-stunt"
+version = "0.1.0"
+source = { editable = "apps/dos_stunt" }
+dependencies = [
+    { name = "flashdreams" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or (extra == 'extra-11-flashdreams-dev' and extra == 'group-11-flashdreams-cuda12') or (extra == 'group-11-flashdreams-cuda12' and extra == 'group-11-flashdreams-cuda13')" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' or (extra == 'extra-11-flashdreams-dev' and extra == 'group-11-flashdreams-cuda12') or (extra == 'group-11-flashdreams-cuda12' and extra == 'group-11-flashdreams-cuda13')" },
+    { name = "pillow" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "crazy-robotaxi" },
+    { name = "pytest" },
+    { name = "pytest-manual-marker" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crazy-robotaxi", marker = "extra == 'dev'", editable = "apps/crazy_robotaxi" },
+    { name = "flashdreams", editable = "flashdreams" },
+    { name = "numpy", specifier = ">=1.24,<2.5" },
+    { name = "pillow", specifier = ">=10" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-manual-marker", marker = "extra == 'dev'", specifier = ">=2.0" },
 ]
 provides-extras = ["dev"]
 

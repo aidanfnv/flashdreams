@@ -154,9 +154,29 @@ effect after restarting the current application process.
 | `R` | Restart the current game |
 | `H` | Hide or show the HUD control tooltips |
 | `Escape` | Return to the previous menu, then exit from the mode screen (fixed) |
-| `Enter` | Submit the focused leaderboard name (fixed) |
+| `Enter` | Confirm the focused menu item or submit the focused leaderboard name (fixed) |
 
 Menu choices and leaderboard buttons can also be clicked with the mouse.
+
+### Menu navigation
+
+Startup menus, Options, Controls, and results screens support directional
+navigation. The focused button has a red outline, and scrollable menus reveal
+the focused item automatically. These menu bindings are fixed independently
+of gameplay bindings.
+
+| Device | Navigate | Confirm | Back |
+| --- | --- | --- | --- |
+| Keyboard | Arrow keys | Enter | Esc |
+| Xbox | D-pad | A | B |
+| Nintendo Switch | D-pad | A | B |
+| PlayStation | D-pad | Cross | Circle |
+
+The controller convention follows `game.gamepad_button_style`. Back first
+closes an open selector or cancels an active editor, then returns to the
+previous menu on another press. Binding capture consumes navigation inputs as
+bindings; Esc or the controller's Back button cancels capture. Gameplay retains
+its configured controls.
 
 ### Controller
 
@@ -173,7 +193,7 @@ the Options screen or user-authored settings YAML. Xbox labels are the default.
 | Steering wheel and pedals | Use normalized steering, throttle, and brake input |
 
 A connected gamepad or wheel takes precedence over keyboard driving input.
-Menu navigation remains mouse and keyboard controlled. Gamepad and wheel
+Menu navigation supports mouse, keyboard, and gamepad input. Gamepad and wheel
 handbrake, control-hint, and live-edit actions are supported but unbound by
 default. Wheel bindings use the semantic steering, throttle, brake, clutch, and
 button values supplied by the runtime; physical device calibration remains a

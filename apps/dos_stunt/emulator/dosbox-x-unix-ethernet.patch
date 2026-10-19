@@ -1,0 +1,91 @@
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-FileCopyrightText: Copyright (C) 2021 The DOSBox Team
+SPDX-License-Identifier: GPL-2.0-or-later
+
+DOSBox-X Unix-domain Ethernet backend for local DOSRX emulator tests.
+Base: b13702c0af413b46061129aea0924122e5b59a8b
+Upstream: https://github.com/joncampbell123/dosbox-x
+License: see LICENSES/GPL-2.0-or-later.txt at the FlashDreams repository root.
+
+diff --git a/src/dosbox.cpp b/src/dosbox.cpp
+index 0a86b7114..a58d9b38d 100644
+--- a/src/dosbox.cpp
++++ b/src/dosbox.cpp
+@@ -1580 +1580 @@ void DOSBOX_SetupConfigSections(void) {
+-        "pcap", "slirp", "ethnet", "nothing", "auto", "none",
++        "pcap", "slirp", "ethnet", "unix", "nothing", "auto", "none",
+diff --git a/src/misc/ethernet.cpp b/src/misc/ethernet.cpp
+index fe50d75f7..a19a43d39 100644
+--- a/src/misc/ethernet.cpp
++++ b/src/misc/ethernet.cpp
+@@ -30,0 +31,62 @@
++#ifndef _WIN32
++#include <cerrno>
++#include <cstdlib>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <unistd.h>
++
++// Local raw-Ethernet transport for emulator tests without capture privileges.
++class UnixEthernetConnection final : public EthernetConnection {
++public:
++    ~UnixEthernetConnection() override {
++        if (fd >= 0) close(fd);
++        if (!local_path.empty()) unlink(local_path.c_str());
++    }
++
++    bool Initialize(Section*) override {
++        const char* local = getenv("DOSBOX_X_ETHERNET_LOCAL");
++        const char* peer = getenv("DOSBOX_X_ETHERNET_PEER");
++        if (!local || !peer || !*local || !*peer ||
++            strlen(local) >= sizeof(sockaddr_un::sun_path) ||
++            strlen(peer) >= sizeof(sockaddr_un::sun_path)) {
++            LOG_MSG("ETHERNET: Set short DOSBOX_X_ETHERNET_LOCAL and DOSBOX_X_ETHERNET_PEER socket paths");
++            return false;
++        }
++        fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK, 0);
++        if (fd < 0) return false;
++        sockaddr_un address = {};
++        address.sun_family = AF_UNIX;
++        strcpy(address.sun_path, local);
++        if (bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
++            LOG_MSG("ETHERNET: Cannot bind %s: %s", local, strerror(errno));
++            return false;
++        }
++        local_path = local;
++        peer_path = peer;
++        return true;
++    }
++
++    void SendPacket(const uint8_t* packet, int len) override {
++        sockaddr_un address = {};
++        address.sun_family = AF_UNIX;
++        strcpy(address.sun_path, peer_path.c_str());
++        sendto(fd, packet, len, MSG_DONTWAIT,
++               reinterpret_cast<sockaddr*>(&address), sizeof(address));
++    }
++
++    void GetPackets(std::function<void(const uint8_t*, int)> callback) override {
++        uint8_t packet[2048];
++        for (unsigned n = 0; n < 64; ++n) {
++            const ssize_t len = recv(fd, packet, sizeof(packet), MSG_DONTWAIT);
++            if (len <= 0) break;
++            callback(packet, static_cast<int>(len));
++        }
++    }
++
++private:
++    int fd = -1;
++    std::string local_path;
++    std::string peer_path;
++};
++#endif
++
+@@ -76,0 +139,7 @@ EthernetConnection* OpenEthernetConnection(std::string backendstr)
++#ifndef _WIN32
++    if (backend == "unix") {
++        conn = new UnixEthernetConnection;
++        settings = control->GetSection("ethernet, pcap");
++        if (!conn->Initialize(settings)) { delete conn; conn = NULL; }
++    }
++#endif

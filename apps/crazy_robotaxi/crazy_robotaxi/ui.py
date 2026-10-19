@@ -53,6 +53,7 @@ from crazy_robotaxi.controls import (
     control_label,
     controls_fields,
     update_binding,
+    _gamepad_button_values,
 )
 from crazy_robotaxi.game_selection import GameMapOption, GameMode, GameSelection
 from crazy_robotaxi.high_scores import (
@@ -429,6 +430,9 @@ class TaxiHudState:
     _menu_back_action_state: BoundActionState = field(init=False)
     """UI-thread rising-edge detector for fixed menu navigation bindings."""
 
+    _menu_native_input_active: bool = False
+    """Whether a native editor or popup should consume Back before its menu."""
+
     _selection_preview_pixels: dict[Path, npt.NDArray[np.uint8] | None] = field(
         default_factory=dict
     )
@@ -480,7 +484,10 @@ class TaxiHudState:
     """Generated-video frame rate estimated from recent selections."""
 
     _gameplay_font: Any | None = None
-    """Droid Sans face used for prominent gameplay feedback."""
+    """Droid Sans face used for headings and prominent gameplay text."""
+
+    _bitmap_font: Any | None = None
+    """Fixed 5×8 bitmap face used below 640×400."""
 
     def __post_init__(self) -> None:
         """Initialize input state from the process-start bindings."""
@@ -564,13 +571,29 @@ class TaxiHudState:
                 else:
                     self._pressed_keys.discard(key)
         capturing = self._controls_capture is not None
+        back_button = 0 if self.gamepad_button_style == "Nintendo Switch" else 1
+        self._menu_back_action_state.controls = replace(
+            _MENU_BACK_CONTROLS,
+            gamepad=replace(
+                _MENU_BACK_CONTROLS.gamepad,
+                return_to_menu=(InputBinding("button", back_button), None),
+            ),
+        )
+        actions = self._control_action_state.apply(events)
+        menu_actions = self._menu_back_action_state.apply(events)
         if capturing:
-            self._consume_binding_capture(received)
+            if "return_to_menu" in menu_actions:
+                self._handle_escape()
+            else:
+                self._consume_binding_capture(received)
         else:
-            actions = self._control_action_state.apply(events)
-            menu_actions = self._menu_back_action_state.apply(events)
-            if (self._menu_stage == "game" and "return_to_menu" in actions) or (
-                self._menu_stage != "game" and "return_to_menu" in menu_actions
+            menu = self.menu_visible()
+            if (
+                self._menu_stage == "game" and not menu and "return_to_menu" in actions
+            ) or (
+                menu
+                and "return_to_menu" in menu_actions
+                and not self._menu_native_input_active
             ):
                 self._handle_escape()
             if "toggle_hints" in actions:
@@ -740,11 +763,24 @@ class TaxiHudState:
     def _menu_back_display(self) -> str:
         """Return the fixed keyboard and styled gamepad menu-back hint."""
         gamepad = binding_display(
-            "gamepad", InputBinding("button", 1), self.gamepad_button_style
+            "gamepad",
+            InputBinding(
+                "button", 0 if self.gamepad_button_style == "Nintendo Switch" else 1
+            ),
+            self.gamepad_button_style,
         )
         return f"ESC / {gamepad}"
 
+    def menu_visible(self) -> bool:
+        """Return whether startup menus or terminal results own navigation."""
+        return self._menu_stage in {"mode", "map", "course", "controls", "options"} or (
+            self._menu_stage == "game"
+            and self._current is not None
+            and self._current.snapshot.session_state in {"awaiting_name", "leaderboard"}
+        )
+
     def _handle_escape(self) -> None:
+        self._menu_native_input_active = False
         model_loop = self.model_loop
         if self._menu_stage == "controls":
             if self._controls_capture is not None:
@@ -989,6 +1025,9 @@ class TaxiHudState:
         for event in received:
             if isinstance(event, KeyboardUserInputEvent):
                 key = canonical_key(str(event.key))
+                if key == "escape" and event.state is KeyboardInputState.PRESSED:
+                    self._controls_capture = None
+                    return
                 if event.state is KeyboardInputState.RELEASED:
                     if capture.device == "keyboard" and isinstance(
                         capture.baseline, frozenset
@@ -1225,13 +1264,18 @@ class TaxiHudState:
                 self._waypoint_projections = ()
             self._waypoint_source = source
         if isinstance(source.snapshot, TaxiGameSnapshot):
-            draw_waypoint_markers(
-                imgui,
-                self._waypoint_projections,
-                phase=source.snapshot.phase,
-                width=self.width,
-                height=self.height,
-            )
+            font = self._text_font(imgui)
+            imgui.push_font(font, 8.0 if _is_bitmap_font(imgui, font) else 0.0)
+            try:
+                draw_waypoint_markers(
+                    imgui,
+                    self._waypoint_projections,
+                    phase=source.snapshot.phase,
+                    width=self.width,
+                    height=self.height,
+                )
+            finally:
+                imgui.pop_font()
         elif source.snapshot.checkpoint_markers:
             camera = FThetaCameraModel(
                 calibration,
@@ -1263,7 +1307,21 @@ class TaxiHudState:
         *,
         bev_frame: Tensor | None = None,
     ) -> None:
-        """Draw one immediate Dear ImGui HUD frame."""
+        """Draw the UI at native resolution with a suitable text face."""
+        font = self._text_font(imgui)
+        imgui.push_font(font, 8.0 if _is_bitmap_font(imgui, font) else 0.0)
+        try:
+            self._draw_contents(imgui, ui_tick, bev_frame=bev_frame)
+        finally:
+            imgui.pop_font()
+
+    def _draw_contents(
+        self,
+        imgui: Any,
+        ui_tick: int,
+        *,
+        bev_frame: Tensor | None,
+    ) -> None:
         self._bev_rect = None
         if self._menu_stage == "controls":
             self._draw_controls(imgui)
@@ -1315,11 +1373,13 @@ class TaxiHudState:
             "awaiting_start",
             "racing",
         }:
-            self._draw_race_status(imgui, snapshot, top_offset=prompt_offset)
+            status_bottom = self._draw_race_status(
+                imgui, snapshot, top_offset=prompt_offset
+            )
             self._draw_navigation_arrow(
                 imgui,
                 snapshot.relative_bearing_rad,
-                center_y=110.0 + prompt_offset,
+                status_bottom=status_bottom,
                 color_rgb=(1.0, 0.18, 0.08),
             )
             self._draw_bev_window(imgui, bev_frame, hud_frame)
@@ -1327,11 +1387,13 @@ class TaxiHudState:
             isinstance(snapshot, TaxiGameSnapshot)
             and snapshot.session_state == "playing"
         ):
-            self._draw_taxi_status(imgui, snapshot, top_offset=prompt_offset)
+            status_bottom = self._draw_taxi_status(
+                imgui, snapshot, top_offset=prompt_offset
+            )
             self._draw_navigation_arrow(
                 imgui,
                 snapshot.relative_bearing_rad,
-                center_y=110.0 + prompt_offset,
+                status_bottom=status_bottom,
                 color_rgb=(
                     (118.0 / 255.0, 185.0 / 255.0, 0.0)
                     if snapshot.phase == "seeking_pickup"
@@ -1408,8 +1470,8 @@ class TaxiHudState:
         snapshot: TaxiGameSnapshot,
         *,
         top_offset: float = 0.0,
-    ) -> None:
-        """Draw the source game's one-line taxi status directly over the frame."""
+    ) -> float:
+        """Draw the taxi status and return the bottom edge of its panel."""
         phase = "PICKUP" if snapshot.phase == "seeking_pickup" else "DROPOFF"
         fare_time = (
             ""
@@ -1428,7 +1490,9 @@ class TaxiHudState:
             if snapshot.phase == "seeking_pickup"
             else (200.0 / 255.0, 150.0 / 255.0, 50.0 / 255.0)
         )
-        self._draw_status_strip(imgui, label, color_rgb=color, top=35.0 + top_offset)
+        bottom = self._draw_status_strip(
+            imgui, label, color_rgb=color, top_offset=top_offset
+        )
         event = _event_label(snapshot)
         if event:
             self._draw_centered_text(
@@ -1440,6 +1504,7 @@ class TaxiHudState:
                 shadow=True,
                 font=self._gameplay_overlay_font(imgui),
             )
+        return bottom
 
     def _draw_race_status(
         self,
@@ -1447,8 +1512,8 @@ class TaxiHudState:
         snapshot: RaceGameSnapshot,
         *,
         top_offset: float = 0.0,
-    ) -> None:
-        """Draw the source game's one-line race status directly over the frame."""
+    ) -> float:
+        """Draw the race status and return the bottom edge of its panel."""
         if snapshot.session_state == "awaiting_start":
             progress = "CROSS START LINE TO BEGIN"
         elif snapshot.lap_count == 0:
@@ -1476,13 +1541,17 @@ class TaxiHudState:
             f"RACE {format_race_time_us(snapshot.elapsed_time_us)}  {progress}  "
             f"{snapshot.distance_m:.0f}m{best}"
         )
-        self._draw_status_strip(
+        return self._draw_status_strip(
             imgui,
             label,
             color_rgb=(200.0 / 255.0, 150.0 / 255.0, 50.0 / 255.0),
-            top=35.0 + top_offset,
+            top_offset=top_offset,
             outline=True,
         )
+
+    def _gameplay_hud_scale(self) -> float:
+        """Return a uniform HUD scale relative to the 640×360 canvas."""
+        return min(self.width / 640.0, self.height / 360.0)
 
     def _draw_status_strip(
         self,
@@ -1490,45 +1559,57 @@ class TaxiHudState:
         label: str,
         *,
         color_rgb: tuple[float, float, float],
-        top: float,
+        top_offset: float = 0.0,
         outline: bool = False,
         font_size: float = 22.0,
-    ) -> None:
-        """Draw centered arcade status text without creating an ImGui window."""
+    ) -> float:
+        """Draw a scaled status panel near the top and return its bottom edge."""
         draw_list = imgui.get_background_draw_list()
-        text_width, text_height = _overlay_text_size(imgui, label, font_size)
-        available_width = max(1.0, float(self.width) - 28.0)
+        scale = self._gameplay_hud_scale()
+        padding_x, padding_y = 14.0 * scale, 6.0 * scale
+        # The optional debug prompt uses its own 14px top margin.
+        top = (14.0 if top_offset else 14.0 * scale) + top_offset
+        text_top = top + padding_y
+        font_size *= scale
+        font = self._text_font(imgui)
+        text_width, text_height = _overlay_text_size(imgui, label, font_size, font=font)
+        available_width = max(1.0, float(self.width) - 2.0 * padding_x)
         if text_width > available_width:
             font_size = max(1.0, font_size * available_width / text_width)
-            text_width, text_height = _overlay_text_size(imgui, label, font_size)
+            text_width, text_height = _overlay_text_size(
+                imgui, label, font_size, font=font
+            )
         left = (float(self.width) - text_width) * 0.5
+        bottom = text_top + text_height + padding_y
         panel_color = _imgui_color(
             imgui,
             (12.0 / 255.0, 12.0 / 255.0, 18.0 / 255.0, 210.0 / 255.0),
         )
         draw_list.add_rect_filled(
-            imgui.ImVec2(left - 14.0, top - 6.0),
-            imgui.ImVec2(left + text_width + 14.0, top + text_height + 6.0),
+            imgui.ImVec2(left - padding_x, top),
+            imgui.ImVec2(left + text_width + padding_x, bottom),
             panel_color,
-            9.0,
+            9.0 * scale,
         )
         color = _imgui_color(imgui, (*color_rgb, 1.0))
         if outline:
             draw_list.add_rect(
-                imgui.ImVec2(left - 14.0, top - 6.0),
-                imgui.ImVec2(left + text_width + 14.0, top + text_height + 6.0),
+                imgui.ImVec2(left - padding_x, top),
+                imgui.ImVec2(left + text_width + padding_x, bottom),
                 color,
-                9.0,
-                2.0,
+                9.0 * scale,
+                max(1.0, 2.0 * scale),
             )
         _draw_overlay_text(
             imgui,
             draw_list,
             label,
-            position=(left, top),
+            position=(left, text_top),
             font_size=font_size,
             color=color,
+            font=font,
         )
+        return bottom
 
     def _draw_centered_text(
         self,
@@ -1570,16 +1651,27 @@ class TaxiHudState:
         )
 
     def _draw_speed(self, imgui: Any, speed_mps: float) -> None:
-        """Draw the source HUD's green speed digit directly over the frame."""
+        """Draw speed and units with scaled left and bottom margins."""
         draw_list = imgui.get_background_draw_list()
         font = self._gameplay_overlay_font(imgui)
+        scale = self._gameplay_hud_scale()
         font_size = max(28.0, min(76.0, float(self.height) * 0.12))
         speed = str(round(abs(float(speed_mps)) * _MPS_TO_MPH))
         speed_width, speed_height = _overlay_text_size(
             imgui, speed, font_size, font=font
         )
-        left = 24.0
-        top = max(10.0, float(self.height) - speed_height - 42.0)
+        unit_size = max(14.0, font_size * 0.28)
+        unit_font = self._text_font(imgui)
+        unit_width, unit_height = _overlay_text_size(
+            imgui, "mph", unit_size, font=unit_font
+        )
+        block_width = max(speed_width, unit_width)
+        left = 24.0 * scale
+        speed_left = left + (block_width - speed_width) * 0.5
+        top = max(
+            10.0 * scale,
+            float(self.height) - speed_height - unit_height - (26.0 + 2.0) * scale,
+        )
         shadow = _imgui_color(imgui, (0.0, 0.0, 0.0, 0.9))
         green = _imgui_color(
             imgui,
@@ -1589,7 +1681,7 @@ class TaxiHudState:
             imgui,
             draw_list,
             speed,
-            position=(left + 3.0, top + 3.0),
+            position=(speed_left + 3.0 * scale, top + 3.0 * scale),
             font_size=font_size,
             color=shadow,
             font=font,
@@ -1598,28 +1690,44 @@ class TaxiHudState:
             imgui,
             draw_list,
             speed,
-            position=(left, top),
+            position=(speed_left, top),
             font_size=font_size,
             color=green,
             font=font,
         )
-        unit_size = max(14.0, font_size * 0.28)
-        unit_width, _ = _overlay_text_size(imgui, "mph", unit_size, font=font)
         _draw_overlay_text(
             imgui,
             draw_list,
             "mph",
             position=(
-                left + (speed_width - unit_width) * 0.5,
-                top + speed_height + 2.0,
+                left + (block_width - unit_width) * 0.5,
+                top + speed_height + 2.0 * scale,
             ),
             font_size=unit_size,
             color=_imgui_color(imgui, (0.86, 0.86, 0.9, 1.0)),
-            font=font,
+            font=unit_font,
         )
 
+    def _text_font(self, imgui: Any) -> Any:
+        """Use a fixed bitmap face for small text below 640×400."""
+        if self.width < 640 or self.height < 400:
+            if self._bitmap_font is None:
+                resource = files("crazy_robotaxi").joinpath("assets/fonts/5x8.pcf.gz")
+                config = imgui.ImFontConfig()
+                config.font_loader_flags = 1 << 9  # FreeType Bitmap flag.
+                config.pixel_snap_h = True
+                with as_file(resource) as path:
+                    self._bitmap_font = imgui.get_io().fonts.add_font_from_file_ttf(
+                        str(path), 8.0, config
+                    )
+                # Bake and lock the font at its only strike.
+                self._bitmap_font.get_font_baked(8.0)
+                self._bitmap_font.flags |= imgui.ImFontFlags_.lock_baked_sizes
+            return self._bitmap_font
+        return self._gameplay_overlay_font(imgui)
+
     def _gameplay_overlay_font(self, imgui: Any) -> Any:
-        """Load and cache imgui-bundle's Droid Sans face."""
+        """Load and cache Droid Sans for headings and large overlay text."""
         if self._gameplay_font is None:
             resource = (
                 files("imgui_bundle")
@@ -1716,7 +1824,10 @@ class TaxiHudState:
                 if disabled:
                     imgui.begin_disabled()
                 try:
-                    if imgui.button(label, imgui.ImVec2(button_width, 34.0)):
+                    if imgui.button(
+                        label,
+                        imgui.ImVec2(button_width, _menu_button_height(imgui, 34.0)),
+                    ):
                         self._request_live_edit_action(action)
                 finally:
                     if disabled:
@@ -1894,6 +2005,7 @@ class TaxiHudState:
     def reset(self) -> None:
         """Clear per-generation HUD snapshots and editable UI state."""
         self._exit_requested = False
+        self._menu_native_input_active = False
         self._clear_presented_game()
         self._validation_message = ""
         self._submission_pending = False
@@ -1974,7 +2086,9 @@ class TaxiHudState:
         reset_width = _button_content_width(imgui, "RESET TO DEFAULTS")
         item_spacing_x = _point_xy(imgui.get_style().item_spacing)[0]
         menu_content_width = max(
-            _point_xy(imgui.calc_text_size(f"CONFIG  {document.path}"))[0],
+            0.0
+            if _is_bitmap_font(imgui)
+            else _point_xy(imgui.calc_text_size(f"CONFIG  {document.path}"))[0],
             save_width + exit_width + reset_width + 2.0 * item_spacing_x,
         )
         fields_width = max(
@@ -1986,6 +2100,17 @@ class TaxiHudState:
             "options-categories",
             category_width,
         )
+        if _is_bitmap_font(imgui):
+            fields_width = min(
+                fields_width,
+                max(
+                    1.0,
+                    _selection_region_width(imgui, self.width, float(self.width))
+                    - category_region_width
+                    - item_spacing_x
+                    - float(imgui.get_style().scrollbar_size),
+                ),
+            )
         fields_region_width = self._menu_scroll_region_width(
             imgui,
             "options-fields",
@@ -2006,7 +2131,7 @@ class TaxiHudState:
                 font_size=32.0,
                 color=(*_TAXI_ACCENT_RGB, 1.0),
             )
-            imgui.text(f"CONFIG  {document.path}")
+            imgui.text_wrapped(f"CONFIG  {document.path}")
             imgui.separator()
             category_visible = _begin_auto_sized_scroll_region(
                 imgui,
@@ -2022,7 +2147,9 @@ class TaxiHudState:
                         label = item.name.replace("_", " ").upper()
                         if imgui.button(
                             f"{label}##options-category-{item.name}",
-                            imgui.ImVec2(category_width, 34.0),
+                            imgui.ImVec2(
+                                category_width, _menu_button_height(imgui, 34.0)
+                            ),
                         ):
                             self._options_category = item.name
                     category_scroll_max_y = float(imgui.get_scroll_max_y())
@@ -2057,16 +2184,23 @@ class TaxiHudState:
             baseline = self._restart_baseline_settings or document.settings
             restart_settings = restart_required_settings(baseline, draft)
             has_unsaved_changes = draft != document.settings
-            if imgui.button("SAVE", imgui.ImVec2(save_width, 38.0)):
+            if imgui.button(
+                "SAVE", imgui.ImVec2(save_width, _menu_button_height(imgui, 38.0))
+            ):
                 self._save_options()
                 return
             imgui.same_line()
             exit_label = "EXIT WITHOUT SAVING" if has_unsaved_changes else "EXIT"
-            if imgui.button(exit_label, imgui.ImVec2(exit_width, 38.0)):
+            if imgui.button(
+                exit_label, imgui.ImVec2(exit_width, _menu_button_height(imgui, 38.0))
+            ):
                 self._discard_options()
                 return
             imgui.same_line()
-            if imgui.button("RESET TO DEFAULTS", imgui.ImVec2(reset_width, 38.0)):
+            if imgui.button(
+                "RESET TO DEFAULTS",
+                imgui.ImVec2(reset_width, _menu_button_height(imgui, 38.0)),
+            ):
                 self._options_draft = clone_settings(document.defaults)
                 self._options_error = ""
                 return
@@ -2405,12 +2539,16 @@ class TaxiHudState:
         reset_width = _button_content_width(imgui, "RESET TO DEFAULTS")
         content_width = max(
             content_width,
-            _point_xy(imgui.calc_text_size(f"CONFIG  {document.path}"))[0],
+            0.0
+            if _is_bitmap_font(imgui)
+            else _point_xy(imgui.calc_text_size(f"CONFIG  {document.path}"))[0],
             save_width + exit_width + reset_width + 2.0 * item_spacing_x,
         )
         region_width = self._menu_scroll_region_width(
             imgui, f"controls-{device}", content_width
         )
+        if _is_bitmap_font(imgui):
+            region_width = _selection_region_width(imgui, self.width, region_width)
         visible = _begin_window(
             imgui,
             f"Crazy Robotaxi - {device.title()} Controls",
@@ -2426,13 +2564,14 @@ class TaxiHudState:
                 font_size=32.0,
                 color=(*_TAXI_ACCENT_RGB, 1.0),
             )
-            imgui.text(f"CONFIG  {document.path}")
+            imgui.text_wrapped(f"CONFIG  {document.path}")
             imgui.separator()
             list_visible = _begin_auto_sized_scroll_region(
                 imgui,
                 f"##controls-{device}-list",
                 width=region_width,
                 max_height=list_max_height,
+                horizontal_scroll=content_width > region_width,
             )
             list_scroll_max_y = 0.0
             list_content_height = 0.0
@@ -2468,14 +2607,24 @@ class TaxiHudState:
                             )
                             imgui.table_headers_row()
                             for item, action_label in zip(items, action_labels):
-                                imgui.table_next_row(min_row_height=38.0)
+                                imgui.table_next_row(
+                                    min_row_height=_menu_button_height(imgui, 38.0)
+                                )
                                 imgui.table_set_column_index(0)
                                 row_y = float(imgui.get_cursor_pos_y())
                                 label_height = _point_xy(
                                     imgui.calc_text_size(action_label)
                                 )[1]
                                 imgui.set_cursor_pos_y(
-                                    row_y + max(0.0, (34.0 - label_height) / 2.0)
+                                    row_y
+                                    + max(
+                                        0.0,
+                                        (
+                                            _menu_button_height(imgui, 34.0)
+                                            - label_height
+                                        )
+                                        / 2.0,
+                                    )
                                 )
                                 imgui.text(action_label)
                                 imgui.set_cursor_pos_y(row_y)
@@ -2487,7 +2636,10 @@ class TaxiHudState:
                                     )
                                     if imgui.button(
                                         f"{label}##{device}-{item.name}-{slot}",
-                                        imgui.ImVec2(binding_width, 34.0),
+                                        imgui.ImVec2(
+                                            binding_width,
+                                            _menu_button_height(imgui, 34.0),
+                                        ),
                                     ):
                                         self._start_binding_capture(item.name, slot)
                         finally:
@@ -2498,14 +2650,21 @@ class TaxiHudState:
                 imgui.end_child()
             list_height = _point_xy(imgui.get_item_rect_size())[1]
             imgui.separator()
-            if imgui.button("SAVE", imgui.ImVec2(save_width, 38.0)):
+            if imgui.button(
+                "SAVE", imgui.ImVec2(save_width, _menu_button_height(imgui, 38.0))
+            ):
                 self._save_controls()
             imgui.same_line()
-            if imgui.button(exit_label, imgui.ImVec2(exit_width, 38.0)):
+            if imgui.button(
+                exit_label, imgui.ImVec2(exit_width, _menu_button_height(imgui, 38.0))
+            ):
                 self._discard_controls_device()
                 return
             imgui.same_line()
-            if imgui.button("RESET TO DEFAULTS", imgui.ImVec2(reset_width, 38.0)):
+            if imgui.button(
+                "RESET TO DEFAULTS",
+                imgui.ImVec2(reset_width, _menu_button_height(imgui, 38.0)),
+            ):
                 self._controls_draft = document.defaults
                 self._controls_capture = None
                 self._controls_error = ""
@@ -2554,10 +2713,14 @@ class TaxiHudState:
             )
             clear_width = _button_content_width(imgui, "CLEAR")
             cancel_width = _button_content_width(imgui, "CANCEL")
-            if imgui.button("CLEAR", imgui.ImVec2(clear_width, 34.0)):
+            if imgui.button(
+                "CLEAR", imgui.ImVec2(clear_width, _menu_button_height(imgui, 34.0))
+            ):
                 self._clear_binding_capture()
             imgui.same_line()
-            if imgui.button("CANCEL", imgui.ImVec2(cancel_width, 34.0)):
+            if imgui.button(
+                "CANCEL", imgui.ImVec2(cancel_width, _menu_button_height(imgui, 34.0))
+            ):
                 self._controls_capture = None
         if self._controls_error:
             _centered_imgui_text(
@@ -2755,7 +2918,7 @@ class TaxiHudState:
                 color=(0.62, 0.62, 0.68, 1.0),
             )
             imgui.separator()
-            button_height = max(36.0, 48.0 * scale)
+            button_height = _menu_button_height(imgui, max(36.0, 48.0 * scale))
             empty_font_size = max(13.0, 15.0 * scale)
             visible_options = tuple(
                 (index, option)
@@ -2924,7 +3087,7 @@ class TaxiHudState:
                 color=(0.62, 0.62, 0.68, 1.0),
             )
             imgui.separator()
-            button_height = max(36.0, 48.0 * scale)
+            button_height = _menu_button_height(imgui, max(36.0, 48.0 * scale))
             empty_font_size = max(13.0, 15.0 * scale)
             courses = option.race_courses
             cell_width = max(
@@ -3090,12 +3253,13 @@ class TaxiHudState:
         image_height = max(1, round(frame_height * scale))
         if image_width <= 4 or image_height <= 4:
             return
-        padding = 16
+        hud_scale = self._gameplay_hud_scale()
+        padding = 8.0 * hud_scale
         window_size = (
-            float(image_width + padding),
-            float(image_height + padding),
+            float(image_width) + 2.0 * padding,
+            float(image_height) + 2.0 * padding,
         )
-        margin = float(max(8, min(self.width, self.height) // 80))
+        margin = 8.0 * hud_scale
         position = (
             float(self.width) - window_size[0] - margin,
             float(self.height) - window_size[1] - margin,
@@ -3103,6 +3267,9 @@ class TaxiHudState:
         # The app composites the CUDA BEV beneath this transparent content area.
         # ImGui owns layout and clipping without drawing window chrome.
         _prepare_window(imgui, position=position, size=window_size, alpha=0.0)
+        imgui.push_style_var(
+            imgui.StyleVar_.window_padding, imgui.ImVec2(padding, padding)
+        )
         visible = _begin_window(
             imgui,
             "Map",
@@ -3123,6 +3290,7 @@ class TaxiHudState:
                 self._draw_bev_border(imgui)
         finally:
             imgui.end()
+            imgui.pop_style_var()
 
     def _draw_bev_border(self, imgui: Any) -> None:
         """Draw an opaque white border at the exact BEV image extent."""
@@ -3136,7 +3304,7 @@ class TaxiHudState:
             imgui.ImVec2(float(left + width), float(top + height)),
             _imgui_color(imgui, (1.0, 1.0, 1.0, 1.0)),
             0.0,
-            2.0,
+            max(1.0, 2.0 * self._gameplay_hud_scale()),
             0,
         )
 
@@ -3145,13 +3313,16 @@ class TaxiHudState:
         imgui: Any,
         bearing_rad: float,
         *,
-        center_y: float,
+        status_bottom: float,
         color_rgb: tuple[float, float, float],
     ) -> None:
-        """Draw the always-visible target-bearing arrow from the original HUD."""
+        """Draw the bearing arrow below the status panel with a scaled gap."""
         draw_list = imgui.get_background_draw_list()
         center_x = float(self.width) * 0.5
-        radius = 30.0
+        scale = self._gameplay_hud_scale()
+        panel_radius = 42.0 * scale
+        center_y = status_bottom + 8.0 * scale + panel_radius
+        radius = 30.0 * scale
         direction_x = -math.sin(bearing_rad)
         direction_y = -math.cos(bearing_rad)
         perpendicular_x = -direction_y
@@ -3174,9 +3345,11 @@ class TaxiHudState:
             (12.0 / 255.0, 12.0 / 255.0, 18.0 / 255.0, 0.75),
         )
         center = imgui.ImVec2(center_x, center_y)
-        draw_list.add_circle_filled(center, 42.0, panel)
-        draw_list.add_circle(center, 42.0, color, 0, 3.0)
-        draw_list.add_line(tail, imgui.ImVec2(base_x, base_y), color, 7.0)
+        draw_list.add_circle_filled(center, panel_radius, panel)
+        draw_list.add_circle(center, panel_radius, color, 0, max(1.0, 3.0 * scale))
+        draw_list.add_line(
+            tail, imgui.ImVec2(base_x, base_y), color, max(1.0, 7.0 * scale)
+        )
         tip = imgui.ImVec2(tip_x, tip_y)
         draw_list.add_triangle_filled(
             tip,
@@ -3526,21 +3699,31 @@ class TaxiHudState:
                     color=(*accent_rgb, 1.0),
                 )
             imgui.separator()
-            _centered_imgui_text(imgui, "LEADERBOARD", font_size=16.0)
+            _centered_imgui_text(
+                imgui,
+                "LEADERBOARD",
+                font=self._gameplay_overlay_font(imgui),
+                font_size=16.0,
+            )
             style = imgui.get_style()
             lower_item_heights: list[float] = []
             if awaiting_name:
                 lower_item_heights.extend(
                     (
-                        max(13.0, 16.0 * scale),
+                        _pixel_font_size(imgui, max(13.0, 16.0 * scale)),
                         float(imgui.get_frame_height()),
-                        max(32.0, 40.0 * scale),
+                        _menu_button_height(imgui, max(32.0, 40.0 * scale)),
                     )
                 )
                 if self._validation_message:
-                    lower_item_heights.append(max(12.0, 13.0 * scale))
+                    lower_item_heights.append(
+                        _pixel_font_size(imgui, max(12.0, 13.0 * scale))
+                    )
             lower_item_heights.extend(
-                (max(34.0, 44.0 * scale), max(12.0, 13.0 * scale))
+                (
+                    _menu_button_height(imgui, max(34.0, 44.0 * scale)),
+                    _pixel_font_size(imgui, max(12.0, 13.0 * scale)),
+                )
             )
             lower_height = (
                 sum(lower_item_heights)
@@ -3581,13 +3764,19 @@ class TaxiHudState:
             ) / 2.0
             if imgui.button(
                 "PLAY AGAIN",
-                imgui.ImVec2(result_button_width, max(34.0, 44.0 * scale)),
+                imgui.ImVec2(
+                    result_button_width,
+                    _menu_button_height(imgui, max(34.0, 44.0 * scale)),
+                ),
             ):
                 self._request_restart()
             imgui.same_line()
             if imgui.button(
                 "RETURN TO MENU",
-                imgui.ImVec2(result_button_width, max(34.0, 44.0 * scale)),
+                imgui.ImVec2(
+                    result_button_width,
+                    _menu_button_height(imgui, max(34.0, 44.0 * scale)),
+                ),
             ):
                 self._handle_escape()
                 return
@@ -3631,7 +3820,9 @@ class TaxiHudState:
             )
             clicked = imgui.button(
                 "SAVE TIME" if race else "SAVE SCORE",
-                imgui.ImVec2(content_width, max(32.0, 40.0 * scale)),
+                imgui.ImVec2(
+                    content_width, _menu_button_height(imgui, max(32.0, 40.0 * scale))
+                ),
             )
         finally:
             if disabled:
@@ -3673,7 +3864,7 @@ class TaxiHudState:
             return 0.0
         cell_padding_y = _point_xy(imgui.get_style().cell_padding)[1]
         text_height = float(imgui.get_font_size()) + 2.0 * cell_padding_y
-        row_height = max(26.0, text_height)
+        row_height = max(_menu_button_height(imgui, 26.0), text_height)
         table_height = text_height + len(entries) * row_height
         if max_height is not None:
             table_height = min(table_height, max_height)
@@ -3701,7 +3892,7 @@ class TaxiHudState:
                 )
             imgui.table_headers_row()
             for rank, entry in enumerate(entries, start=1):
-                imgui.table_next_row(min_row_height=26.0)
+                imgui.table_next_row(min_row_height=_menu_button_height(imgui, 26.0))
                 if rank == high_score_rank:
                     imgui.table_set_bg_color(
                         imgui.TableBgTarget_.row_bg1,
@@ -3820,15 +4011,93 @@ class CrazyRobotaxiImGuiUILoop(ImGuiUILoop[TaxiHudState]):
         """
         super().__init__(width=width, height=height)
         self._window_resize_requested: tuple[int, int] | None = None
+        self._menu_gamepads: dict[tuple[int, str], tuple[float, ...]] = {}
+        self._capturing_menu_input = False
+        self._menu_wait_for_release = False
 
     def is_finished(self) -> bool:
         """Return whether the root menu requested application shutdown."""
         return self.state._exit_requested
 
+    def _prepare_menu_navigation(self, imgui: Any, events: UserInputEvents) -> None:
+        """Queue controller input and configure navigation for the next frame."""
+        io = imgui.get_io()
+        navigation = (
+            imgui.ConfigFlags_.nav_enable_keyboard
+            | imgui.ConfigFlags_.nav_enable_gamepad
+        )
+        buttons = (
+            (0, imgui.Key.gamepad_face_down),
+            (1, imgui.Key.gamepad_face_right),
+            (12, imgui.Key.gamepad_dpad_up),
+            (13, imgui.Key.gamepad_dpad_down),
+            (14, imgui.Key.gamepad_dpad_left),
+            (15, imgui.Key.gamepad_dpad_right),
+        )
+        self._menu_wait_for_release |= (
+            self._capturing_menu_input or self.state._controls_capture is not None
+        )
+        enabled = self.state.menu_visible() and not self._menu_wait_for_release
+
+        def route_buttons() -> None:
+            for index, key in buttons:
+                pressed = any(
+                    index < len(values) and values[index] > 0.5
+                    for values in self._menu_gamepads.values()
+                )
+                io.add_key_event(key, enabled and pressed)
+
+        for event in events.get_events():
+            if isinstance(event, FocusUserInputEvent):
+                io.add_focus_event(event.focused)
+                if not event.focused:
+                    self._menu_gamepads.clear()
+                route_buttons()
+            elif isinstance(event, GamepadUserInputEvent):
+                identity = event.index, event.controller_id
+                if event.action == "state":
+                    self._menu_gamepads[identity] = _gamepad_button_values(event)
+                elif event.action == "connected":
+                    self._menu_gamepads[identity] = ()
+                else:
+                    self._menu_gamepads.pop(identity, None)
+                route_buttons()
+        route_buttons()
+        if (
+            not self._capturing_menu_input
+            and self.state._controls_capture is None
+            and not self.state._pressed_keys
+            and not any(
+                index < len(values) and values[index] > 0.5
+                for values in self._menu_gamepads.values()
+                for index, _key in buttons
+            )
+        ):
+            self._menu_wait_for_release = False
+        io.config_flags = (
+            (io.config_flags | navigation)
+            if enabled
+            else (io.config_flags & ~navigation)
+        )
+        if self._menu_gamepads:
+            io.backend_flags |= imgui.BackendFlags_.has_gamepad
+        else:
+            io.backend_flags &= ~imgui.BackendFlags_.has_gamepad
+        io.config_nav_swap_gamepad_buttons = (
+            self.state.gamepad_button_style == "Nintendo Switch"
+        )
+        io.config_nav_cursor_visible_always = True
+        io.config_nav_escape_clear_focus_item = False
+        imgui.get_style().set_color_(
+            imgui.Col_.nav_cursor, imgui.ImVec4(1.0, 0.0, 0.0, 1.0)
+        )
+
     def step_ui(
         self, imgui: Any, step_index: int, events: UserInputEvents
     ) -> Tensor | None:
         """Draw the HUD and return the generated world frame beneath it."""
+        self._capturing_menu_input = self.state._controls_capture is not None
+        self.state.consume_input_events(events)
         presentation_size = self.state.presentation_size or (
             self.state.width,
             self.state.height,
@@ -3843,7 +4112,6 @@ class CrazyRobotaxiImGuiUILoop(ImGuiUILoop[TaxiHudState]):
                 self._window_resize_requested = presentation_size
         else:
             self._window_resize_requested = None
-        self.state.consume_input_events(events)
         frames = self.presented_model_frames()
         video = frames[0] if frames else None
         hdmap_frame = frames[1] if len(frames) > 1 else None
@@ -3852,6 +4120,11 @@ class CrazyRobotaxiImGuiUILoop(ImGuiUILoop[TaxiHudState]):
             self.state.select_presented_frame(video)
             self.state.draw_waypoints(imgui, video)
         self.state.draw(imgui, step_index, bev_frame=bev_frame)
+        self.state._menu_native_input_active = (
+            imgui.is_any_item_active()
+            or imgui.is_popup_open("", imgui.PopupFlags_.any_popup_id)
+        )
+        self._prepare_menu_navigation(imgui, events)
         if video is None:
             return None
         background = (
@@ -3862,6 +4135,9 @@ class CrazyRobotaxiImGuiUILoop(ImGuiUILoop[TaxiHudState]):
     def reset(self) -> None:
         """Reset UI-owned state and retained renderer resources."""
         self.state.reset()
+        self._menu_gamepads.clear()
+        self._menu_wait_for_release = False
+        self._capturing_menu_input = False
         super().reset()
 
 
@@ -4045,13 +4321,27 @@ def _push_arcade_card_style(
     imgui: Any,
     accent_rgb: tuple[float, float, float],
 ) -> tuple[int, int]:
+    compact = _is_bitmap_font(imgui)
     style_vars = (
-        (imgui.StyleVar_.window_rounding, 16.0),
-        (imgui.StyleVar_.window_border_size, 2.0),
-        (imgui.StyleVar_.window_padding, imgui.ImVec2(28.0, 24.0)),
-        (imgui.StyleVar_.item_spacing, imgui.ImVec2(10.0, 10.0)),
-        (imgui.StyleVar_.frame_rounding, 7.0),
-        (imgui.StyleVar_.frame_padding, imgui.ImVec2(10.0, 8.0)),
+        (imgui.StyleVar_.window_rounding, 4.0 if compact else 16.0),
+        (imgui.StyleVar_.window_border_size, 1.0 if compact else 2.0),
+        (
+            imgui.StyleVar_.window_padding,
+            imgui.ImVec2(8.0, 6.0) if compact else imgui.ImVec2(28.0, 24.0),
+        ),
+        (
+            imgui.StyleVar_.item_spacing,
+            imgui.ImVec2(4.0, 3.0) if compact else imgui.ImVec2(10.0, 10.0),
+        ),
+        (imgui.StyleVar_.frame_rounding, 2.0 if compact else 7.0),
+        (
+            imgui.StyleVar_.frame_padding,
+            imgui.ImVec2(4.0, 3.0) if compact else imgui.ImVec2(10.0, 8.0),
+        ),
+        (
+            imgui.StyleVar_.scrollbar_size,
+            8.0 if compact else float(imgui.get_style().scrollbar_size),
+        ),
     )
     style_colors = (
         (imgui.Col_.window_bg, (0.047, 0.047, 0.071, 0.98)),
@@ -4109,7 +4399,9 @@ def _begin_auto_sized_scroll_region(
         child_id,
         imgui.ImVec2(width, 0.0),
         child_flags=(
-            imgui.ChildFlags_.auto_resize_y | imgui.ChildFlags_.always_auto_resize
+            imgui.ChildFlags_.auto_resize_y
+            | imgui.ChildFlags_.always_auto_resize
+            | imgui.ChildFlags_.nav_flattened
         ),
         window_flags=(
             int(imgui.WindowFlags_.horizontal_scrollbar) if horizontal_scroll else 0
@@ -4346,8 +4638,9 @@ def _overlay_text_size(
     font: Any | None = None,
 ) -> tuple[float, float]:
     """Measure text after applying an explicit ImGui display size."""
+    font_size = _pixel_font_size(imgui, font_size, font)
     if font is not None:
-        imgui.push_font(font, float(font_size))
+        imgui.push_font(font, font_size)
         try:
             return _point_xy(imgui.calc_text_size(text))
         finally:
@@ -4368,7 +4661,7 @@ def _centered_imgui_text(
     """Draw one centered ImGui text item."""
     cursor_x = float(imgui.get_cursor_pos_x())
     available_width = _point_xy(imgui.get_content_region_avail())[0]
-    imgui.push_font(font, float(font_size))
+    imgui.push_font(font, _pixel_font_size(imgui, font_size, font))
     if color is not None:
         imgui.push_style_color(imgui.Col_.text, imgui.ImVec4(*color))
     try:
@@ -4407,7 +4700,28 @@ def _center_imgui_item(imgui: Any, width: float) -> float:
 def _centered_imgui_button(imgui: Any, label: str, size: Any) -> bool:
     """Draw one button centered in the current content region."""
     _center_imgui_item(imgui, _point_xy(size)[0])
-    return bool(imgui.button(label, size))
+    width, height = _point_xy(size)
+    return bool(
+        imgui.button(label, imgui.ImVec2(width, _menu_button_height(imgui, height)))
+    )
+
+
+def _is_bitmap_font(imgui: Any, font: Any | None = None) -> bool:
+    """Identify the face whose single bitmap strike is locked."""
+    return bool(
+        (imgui.get_font() if font is None else font).flags
+        & imgui.ImFontFlags_.lock_baked_sizes
+    )
+
+
+def _pixel_font_size(imgui: Any, size: float, font: Any | None = None) -> float:
+    """Use the bitmap font at its native eight-pixel height."""
+    return 8.0 if _is_bitmap_font(imgui, font) else float(size)
+
+
+def _menu_button_height(imgui: Any, height: float) -> float:
+    """Fit compact menu buttons to their text and frame padding."""
+    return float(imgui.get_frame_height()) if _is_bitmap_font(imgui) else height
 
 
 def _draw_overlay_text(
@@ -4423,7 +4737,7 @@ def _draw_overlay_text(
     """Draw sized text directly into the shared background overlay."""
     draw_list.add_text(
         imgui.get_font() if font is None else font,
-        float(font_size),
+        _pixel_font_size(imgui, font_size, font),
         imgui.ImVec2(*position),
         color,
         text,

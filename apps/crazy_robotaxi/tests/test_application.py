@@ -970,6 +970,7 @@ def test_application_rejects_geometry_the_model_does_not_produce() -> None:
 
 def test_user_settings_resize_window_to_presentation_resolution(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
@@ -998,6 +999,7 @@ def test_user_settings_resize_window_to_presentation_resolution(
         width=1280,
         height=704,
         presentation_size=(1920, 1080),
+        _controls_capture=None,
         consume_input_events=lambda _events: None,
         draw=lambda *_args, **_kwargs: None,
     )
@@ -1008,26 +1010,32 @@ def test_user_settings_resize_window_to_presentation_resolution(
 
     state.resize = resize
     ui_loop.state = cast(Any, state)
-    assert ui_loop.step_ui(None, 0, UserInputEvents([])) is None
+    monkeypatch.setattr(ui_loop, "_prepare_menu_navigation", lambda *_args: None)
+    imgui = SimpleNamespace(
+        is_any_item_active=lambda: False,
+        is_popup_open=lambda *_args: False,
+        PopupFlags_=SimpleNamespace(any_popup_id=1),
+    )
+    assert ui_loop.step_ui(imgui, 0, UserInputEvents([])) is None
     request = ui_loop.flush_ui_loop_requests()
 
     assert (renderer.width, renderer.height) == (1280, 704)
     assert request is not None
     assert request.new_window_size == (1920, 1080)
 
-    assert ui_loop.step_ui(None, 1, UserInputEvents([])) is None
+    assert ui_loop.step_ui(imgui, 1, UserInputEvents([])) is None
     assert (ui_loop.state.width, ui_loop.state.height) == (1920, 1080)
     assert (renderer.width, renderer.height) == (1920, 1080)
     assert ui_loop.flush_ui_loop_requests() is None
 
     state.presentation_size = (1600, 900)
-    assert ui_loop.step_ui(None, 2, UserInputEvents([])) is None
+    assert ui_loop.step_ui(imgui, 2, UserInputEvents([])) is None
     request = ui_loop.flush_ui_loop_requests()
     assert request is not None
     assert request.new_window_size == (1600, 900)
     assert (renderer.width, renderer.height) == (1920, 1080)
 
-    assert ui_loop.step_ui(None, 3, UserInputEvents([])) is None
+    assert ui_loop.step_ui(imgui, 3, UserInputEvents([])) is None
     assert (ui_loop.state.width, ui_loop.state.height) == (1600, 900)
     assert (renderer.width, renderer.height) == (1600, 900)
     assert ui_loop.flush_ui_loop_requests() is None

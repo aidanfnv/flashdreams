@@ -34,6 +34,7 @@ imgui-bundle           MIT          https://github.com/pthom/imgui_bundle
 loguru                 MIT          https://github.com/Delgan/loguru
 numpy                  BSD-3-Clause https://github.com/numpy/numpy
 nvidia-ml-py           BSD-3-Clause https://pypi.org/project/nvidia-ml-py/
+pillow                 MIT-CMU      https://github.com/python-pillow/Pillow
 psutil                 BSD-3-Clause https://github.com/giampaolo/psutil
 safetensors            Apache-2.0   https://github.com/huggingface/safetensors
 slangpy                Apache-2.0   https://github.com/shader-slang/slangpy
@@ -176,9 +177,36 @@ License:  Zlib (see LICENSES/Zlib.txt)
 Upstream: https://lodev.org/lodepng/
 
 LodePNG is a PNG codec implementation embedded by the upstream
-cudaraster framework. It is the only non-NVIDIA source physically
-redistributed in this repository. The inline notice in lodepng.h
+cudaraster framework. The inline notice in lodepng.h
 preserves the upstream copyright notice as required by the Zlib
 license; LICENSES/Zlib.txt reproduces the license text in full.
+
+--------------------------------------------------------------------------------
+X.Org 5x8 bitmap font
+--------------------------------------------------------------------------------
+
+Path:     apps/crazy_robotaxi/crazy_robotaxi/assets/fonts/5x8.pcf.gz
+License:  LicenseRef-Public-Domain (see LICENSES/LicenseRef-Public-Domain.txt)
+Upstream: https://gitlab.freedesktop.org/xorg/font/misc-misc
+
+Unmodified compiled Unicode bitmap font from Debian's xfonts-base package.
+The upstream license and the font's embedded COPYRIGHT property state:
+"Public domain font.  Share and enjoy."
+
+--------------------------------------------------------------------------------
+DOSBox-X optional test-emulator patch
+--------------------------------------------------------------------------------
+
+Path:     apps/dos_stunt/emulator/dosbox-x-unix-ethernet.patch
+License:  GPL-2.0-or-later (see LICENSES/GPL-2.0-or-later.txt)
+          Copyright (C) 2021 The DOSBox Team
+          Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
+Upstream: https://github.com/joncampbell123/dosbox-x
+Base:     b13702c0af413b46061129aea0924122e5b59a8b
+
+The patch adds a Unix-domain datagram Ethernet backend to the separate
+DOSBox-X emulator for local tests without packet-capture privileges.
+DOSBox-X source and binaries remain external; no emulator code is linked
+into the DOS client or the FlashDreams Python packages.
 
 ================================================================================

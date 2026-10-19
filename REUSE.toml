@@ -22,6 +22,12 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved."
 SPDX-License-Identifier = "Apache-2.0"
 
+[[annotations]]
+path = "apps/crazy_robotaxi/crazy_robotaxi/assets/fonts/5x8.pcf.gz"
+precedence = "override"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "LicenseRef-Public-Domain"
+
 # --- Documentation files (CC-BY-4.0 is the standard choice for prose;
 #     keeping Apache-2.0 here for parity with the rest of the project so
 #     code snippets quoted in docs match the source license). ---
@@ -115,3 +121,13 @@ path = "integrations_v2/omnidreams/impl/ludus-renderer/ludus_renderer/_cpp/cudar
 precedence = "override"
 SPDX-FileCopyrightText = "Copyright (c) 2005-2011 Lode Vandevenne"
 SPDX-License-Identifier = "Zlib"
+
+# Optional DOSBox-X test-emulator patch; this is not linked into DOSRX.EXE.
+[[annotations]]
+path = "apps/dos_stunt/emulator/dosbox-x-unix-ethernet.patch"
+precedence = "override"
+SPDX-FileCopyrightText = [
+    "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+    "Copyright (C) 2021 The DOSBox Team",
+]
+SPDX-License-Identifier = "GPL-2.0-or-later"

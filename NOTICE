@@ -15,6 +15,14 @@ LICENSES/:
     cudaraster/framework/3rdparty/lodepng/{lodepng.h,lodepng.cpp}
         Zlib          (see LICENSES/Zlib.txt)
 
+The X.Org 5x8 bitmap font at
+apps/crazy_robotaxi/crazy_robotaxi/assets/fonts/5x8.pcf.gz is public domain
+(see LICENSES/LicenseRef-Public-Domain.txt).
+
+The optional DOSBox-X test-emulator patch at
+apps/dos_stunt/emulator/dosbox-x-unix-ethernet.patch is GPL-2.0-or-later
+(see LICENSES/GPL-2.0-or-later.txt).
+
 Third-party software attributions, source-level redistribution
 disclosures, and the full per-dependency license inventory are
 documented in THIRD-PARTY-NOTICES at the repository root.
