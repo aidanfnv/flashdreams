@@ -82,7 +82,7 @@ from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
 pytestmark = pytest.mark.ci_cpu
 
-_DEBUG_MAPS = Path(__file__).parent / "maps/first_frame"
+_DEBUG_MAPS = Path(__file__).parent / "maps/application"
 _DEBUG_RACE_MAP = _DEBUG_MAPS / "debug_flashdreams_raceway.robotaxi.yaml"
 
 
@@ -371,9 +371,6 @@ def test_application_registers_model_and_imgui_ui_loops(mode: str | None) -> Non
     assert {option.path.name for option in ui_loop.state.map_options} == {
         "debug_boulevard_district.robotaxi.yaml",
         "debug_flashdreams_raceway.robotaxi.yaml",
-        "debug_harbor_market.robotaxi.yaml",
-        "debug_mesa_gardens.robotaxi.yaml",
-        "debug_pacific_breakwater.robotaxi.yaml",
     }
     assert (
         ui_loop.state.map_options[0].path.name
