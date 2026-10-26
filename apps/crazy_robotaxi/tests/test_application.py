@@ -82,12 +82,16 @@ from flashdreams.runtime_v2.video_tensor import VideoTensorLayout
 
 pytestmark = pytest.mark.ci_cpu
 
-_DEMO_RACE_MAP = (
-    Path(__file__).parents[1]
-    / "crazy_robotaxi"
-    / "maps"
-    / "flashdreams_raceway.robotaxi.yaml"
-)
+_DEBUG_MAPS = Path(__file__).parent / "maps/first_frame"
+_DEBUG_RACE_MAP = _DEBUG_MAPS / "debug_flashdreams_raceway.robotaxi.yaml"
+
+
+@pytest.fixture(autouse=True)
+def _use_debug_maps(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "crazy_robotaxi.application._DEFAULT_MAP",
+        _DEBUG_MAPS / "debug_boulevard_district.robotaxi.yaml",
+    )
 
 
 @dataclass(kw_only=True)
@@ -365,20 +369,23 @@ def test_application_registers_model_and_imgui_ui_loops(mode: str | None) -> Non
     assert model_loop.state.ui_loop is ui_loop
     assert ui_loop.state.model_loop is model_loop
     assert {option.path.name for option in ui_loop.state.map_options} == {
-        "boulevard_district.robotaxi.yaml",
-        "flashdreams_raceway.robotaxi.yaml",
-        "harbor_market.robotaxi.yaml",
-        "mesa_gardens.robotaxi.yaml",
-        "pacific_breakwater.robotaxi.yaml",
+        "debug_boulevard_district.robotaxi.yaml",
+        "debug_flashdreams_raceway.robotaxi.yaml",
+        "debug_harbor_market.robotaxi.yaml",
+        "debug_mesa_gardens.robotaxi.yaml",
+        "debug_pacific_breakwater.robotaxi.yaml",
     }
-    assert ui_loop.state.map_options[0].path.name == "boulevard_district.robotaxi.yaml"
+    assert (
+        ui_loop.state.map_options[0].path.name
+        == "debug_boulevard_district.robotaxi.yaml"
+    )
     assert all(
         option.preview_image_path is not None for option in ui_loop.state.map_options
     )
     raceway = next(
         option
         for option in ui_loop.state.map_options
-        if option.path.name == "flashdreams_raceway.robotaxi.yaml"
+        if option.path.name == "debug_flashdreams_raceway.robotaxi.yaml"
     )
     assert raceway.race_courses[0].spawn_id == "race_start"
     assert raceway.race_courses[0].preview_image_path is not None
@@ -438,14 +445,14 @@ def test_complete_cli_game_selection_starts_without_menus(monkeypatch) -> None:
             "--game-mode",
             "race",
             "--map",
-            str(_DEMO_RACE_MAP),
+            str(_DEBUG_RACE_MAP),
             "--race-course",
             "grand-prix",
         ]
     )
     assert app._config is not None
     assert app._config.initial_game_mode == "race"
-    assert app._config.initial_map_path == _DEMO_RACE_MAP.resolve()
+    assert app._config.initial_map_path == _DEBUG_RACE_MAP.resolve()
     assert app._config.initial_race_course_id == "grand-prix"
 
     session = app.create_session(app.session_desc())
@@ -476,7 +483,7 @@ def test_free_roam_cli_selection_starts_without_a_race_course(monkeypatch) -> No
             "--game-mode",
             "free-roam",
             "--map",
-            str(_DEMO_RACE_MAP),
+            str(_DEBUG_RACE_MAP),
         ]
     )
 
@@ -1347,7 +1354,7 @@ def test_no_ui_registers_headless_loop_and_keeps_cli_selection() -> None:
             "--race-course",
             "grand-prix",
             "--map",
-            str(_DEMO_RACE_MAP),
+            str(_DEBUG_RACE_MAP),
         ]
     )
     assert app._config is not None
@@ -1361,7 +1368,7 @@ def test_no_ui_registers_headless_loop_and_keeps_cli_selection() -> None:
     assert isinstance(model_loop, CrazyRobotaxiModelLoop)
     assert model_loop.state.ui_loop is ui_loop
     assert ui_loop.state.initial_game_mode == "race"
-    assert ui_loop.state.initial_map_path == _DEMO_RACE_MAP.resolve()
+    assert ui_loop.state.initial_map_path == _DEBUG_RACE_MAP.resolve()
     assert ui_loop.state.initial_race_course_id == "grand-prix"
 
 
@@ -1380,7 +1387,7 @@ def test_no_ui_in_race_mode_requires_a_course() -> None:
             "--game-mode",
             "race",
             "--map",
-            str(_DEMO_RACE_MAP),
+            str(_DEBUG_RACE_MAP),
         ]
     )
 
@@ -1594,7 +1601,7 @@ def test_scripted_game_runs_through_runtime_with_all_views_and_aligned_telemetry
             "--game-mode",
             game_mode,
             "--map",
-            str(_DEMO_RACE_MAP),
+            str(_DEBUG_RACE_MAP),
             *(["--race-course", "grand-prix"] if game_mode == "race" else []),
             "--drive-script",
             str(script),
@@ -1647,8 +1654,8 @@ def test_scripted_game_runs_through_runtime_with_all_views_and_aligned_telemetry
         assert records[-1]["game"]["session_state"] == "awaiting_name"
     assert manifest["model_preset"] == _STUB_PIPELINE_CONFIG.name
     assert (
-        window.directory / "inputs" / _DEMO_RACE_MAP.name
-    ).read_text() == _DEMO_RACE_MAP.read_text()
+        window.directory / "inputs" / _DEBUG_RACE_MAP.name
+    ).read_text() == _DEBUG_RACE_MAP.read_text()
     from crazy_robotaxi.driving_script import load_driving_script
 
     captured_script = load_driving_script(window.directory / "inputs/drive.yaml")
@@ -1670,7 +1677,7 @@ def test_scripted_headless_startup_requires_complete_cli_selection(
         "--game-mode",
         "race",
         "--map",
-        str(_DEMO_RACE_MAP),
+        str(_DEBUG_RACE_MAP),
         "--race-course",
         "grand-prix",
     ]
