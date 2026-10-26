@@ -364,7 +364,13 @@ def test_application_registers_model_and_imgui_ui_loops(mode: str | None) -> Non
     assert not model_loop.state.game_selected
     assert model_loop.state.ui_loop is ui_loop
     assert ui_loop.state.model_loop is model_loop
-    assert len(ui_loop.state.map_options) == 2
+    assert {option.path.name for option in ui_loop.state.map_options} == {
+        "boulevard_district.robotaxi.yaml",
+        "flashdreams_raceway.robotaxi.yaml",
+        "harbor_market.robotaxi.yaml",
+        "mesa_gardens.robotaxi.yaml",
+        "pacific_breakwater.robotaxi.yaml",
+    }
     assert ui_loop.state.map_options[0].path.name == "boulevard_district.robotaxi.yaml"
     assert all(
         option.preview_image_path is not None for option in ui_loop.state.map_options
