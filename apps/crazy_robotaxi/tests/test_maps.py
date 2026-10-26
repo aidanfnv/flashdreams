@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""CPU validation for shipped semantic maps."""
+"""CPU validation for frozen semantic-map fixtures."""
 
 import math
 import zipfile
@@ -32,29 +32,27 @@ _MAP_FIXTURES = Path(__file__).parent / "maps"
 @pytest.mark.parametrize(
     "filename",
     [
-        "boulevard_district.robotaxi.yaml",
-        "flashdreams_raceway.robotaxi.yaml",
-        "pacific_breakwater.robotaxi.yaml",
-        "harbor_market.robotaxi.yaml",
-        "mesa_gardens.robotaxi.yaml",
+        "regression/debug_boulevard_district.robotaxi.yaml",
+        "application/debug_flashdreams_raceway.robotaxi.yaml",
+        "regression/debug_pacific_breakwater.robotaxi.yaml",
+        "regression/debug_harbor_market.robotaxi.yaml",
+        "regression/debug_mesa_gardens.robotaxi.yaml",
     ],
 )
-def test_shipped_map_is_valid(filename: str) -> None:
-    path = Path(__file__).parents[1] / "crazy_robotaxi" / "maps" / filename
+def test_debug_map_is_valid(filename: str) -> None:
+    path = _MAP_FIXTURES / filename
     game_map = load_game_map(path)
 
-    assert game_map.map_id.startswith("crazy-robotaxi-")
+    assert game_map.map_id.startswith("debug-")
     assert game_map.spawns
     assert game_map.lanes
     assert game_map.default_spawn.prompt_context
     assert game_map.default_spawn.prompt_context != game_map.default_spawn.prompt
 
 
-@pytest.mark.parametrize("name", ["harbor_market", "mesa_gardens"])
-def test_taxi_district_roads_are_reachable_from_spawn(name: str) -> None:
-    path = (
-        Path(__file__).parents[1] / "crazy_robotaxi" / "maps" / f"{name}.robotaxi.yaml"
-    )
+@pytest.mark.parametrize("name", ["debug_harbor_market", "debug_mesa_gardens"])
+def test_debug_district_roads_are_reachable_from_spawn(name: str) -> None:
+    path = _MAP_FIXTURES / "regression" / f"{name}.robotaxi.yaml"
     game_map = load_game_map(path)
     lanes = {lane.lane_id: lane for lane in game_map.lanes}
     reachable: set[str] = set()
@@ -254,13 +252,8 @@ def test_scene_request_selects_nondefault_spawn(
     assert course_scene.game_map.race_courses[0].spawn_id == "course-start"
 
 
-def test_boulevard_traffic_turns_are_continuous_and_physically_limited() -> None:
-    path = (
-        Path(__file__).parents[1]
-        / "crazy_robotaxi"
-        / "maps"
-        / "boulevard_district.robotaxi.yaml"
-    )
+def test_debug_boulevard_traffic_turns_are_continuous_and_physically_limited() -> None:
+    path = _MAP_FIXTURES / "regression/debug_boulevard_district.robotaxi.yaml"
     game_map = load_game_map(path)
     lanes = {lane.lane_id: lane for lane in game_map.lanes}
     node_types = {node.node_id: node.node_type for node in game_map.topology.nodes}
