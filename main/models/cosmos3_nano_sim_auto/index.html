@@ -10,36 +10,36 @@
       
       
       
-        <link rel="canonical" href="https://nvidia.github.io/flashdreams/main/documentation/inferencing_api/guides/latency_tuning/">
+        <link rel="canonical" href="https://nvidia.github.io/flashdreams/main/models/cosmos3_nano_sim_auto/">
       
       
-        <link rel="prev" href="../stream_inference_pipeline/">
+        <link rel="prev" href="../cosmos3_nano_sim_bimanual/">
       
       
-        <link rel="next" href="../profiling/">
+        <link rel="next" href="../omnidreams/">
       
       
         
       
       
-      <link rel="icon" href="../../../../favicon.svg">
+      <link rel="icon" href="../../favicon.svg">
       <meta name="generator" content="zensical-0.0.67">
     
     
       
-        <title>Latency tuning - FlashDreams</title>
+        <title>Cosmos3 Nano Sim Auto - FlashDreams</title>
       
     
     
       
         
       
-      <link rel="stylesheet" href="../../../../assets/stylesheets/modern/main.4ae390e2.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.4ae390e2.min.css">
       
         
           
         
-        <link rel="stylesheet" href="../../../../assets/stylesheets/modern/palette.96d1a7e4.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.96d1a7e4.min.css">
       
       
 
@@ -58,11 +58,11 @@
       
     
     
-      <link rel="stylesheet" href="../../../../stylesheets/custom.css">
+      <link rel="stylesheet" href="../../stylesheets/custom.css">
     
       <link rel="stylesheet" href="https://unpkg.com/katex@0/dist/katex.min.css">
     
-    <script>__md_scope=new URL("../../../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
     
       
 
@@ -87,7 +87,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#1-establish-a-reproducible-baseline" class="md-skip">
+        <a href="#quick-start" class="md-skip">
           Skip to content
         </a>
       
@@ -103,9 +103,9 @@
 
 <header class="md-header md-header--shadow md-header--lifted" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../../../.." title="FlashDreams" class="md-header__button md-logo" aria-label="FlashDreams" data-md-component="logo">
+    <a href="../.." title="FlashDreams" class="md-header__button md-logo" aria-label="FlashDreams" data-md-component="logo">
       
-  <img src="../../../../images/horizontal-light.svg" alt="FlashDreams">
+  <img src="../../images/horizontal-light.svg" alt="FlashDreams">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Latency tuning
+              Cosmos3 Nano Sim Auto
             
           </span>
         </div>
@@ -200,7 +200,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../../../.." class="md-tabs__link">
+      <a href="../.." class="md-tabs__link">
         
   
   Home
@@ -227,7 +227,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../quickstart/" class="md-tabs__link">
+        <a href="../../quickstart/" class="md-tabs__link">
           
   
   Get Started
@@ -242,6 +242,8 @@
   
   
   
+    
+  
   
     
       
@@ -260,8 +262,8 @@
     
     
     
-      <li class="md-tabs__item">
-        <a href="../../../../models/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   Models
@@ -293,7 +295,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../demos/" class="md-tabs__link">
+        <a href="../../demos/" class="md-tabs__link">
           
   
   Demos
@@ -308,8 +310,6 @@
   
   
   
-    
-  
   
     
       
@@ -332,8 +332,8 @@
     
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../documentation/" class="md-tabs__link">
           
   
   Documentation
@@ -361,7 +361,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../../../community/" class="md-tabs__link">
+        <a href="../../community/" class="md-tabs__link">
           
   
   Community
@@ -400,9 +400,9 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../../../.." title="FlashDreams" class="md-nav__button md-logo" aria-label="FlashDreams" data-md-component="logo">
+    <a href="../.." title="FlashDreams" class="md-nav__button md-logo" aria-label="FlashDreams" data-md-component="logo">
       
-  <img src="../../../../images/horizontal-light.svg" alt="FlashDreams">
+  <img src="../../images/horizontal-light.svg" alt="FlashDreams">
 
     </a>
     FlashDreams
@@ -429,7 +429,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../.." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -476,7 +476,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../quickstart/" class="md-nav__link ">
+            <a href="../../quickstart/" class="md-nav__link ">
               
   
   
@@ -504,6 +504,8 @@
       
   
   
+    
+  
   
   
     
@@ -523,18 +525,21 @@
     
     
       
+        
+        
+      
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../models/" class="md-nav__link ">
+            <a href="../" class="md-nav__link ">
               
   
   
@@ -551,14 +556,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
         
-          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
             <label class="md-nav__title" for="__nav_3">
               <span class="md-nav__icon md-icon"></span>
               
@@ -574,8 +579,10 @@
                   
   
   
+    
   
   
+  
     
     
       
@@ -595,6 +602,8 @@
       
         
       
+        
+      
     
     
     
@@ -602,11 +611,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" checked>
         
           
           <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
@@ -627,7 +636,7 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="true">
             <label class="md-nav__title" for="__nav_3_2">
               <span class="md-nav__icon md-icon"></span>
               
@@ -644,7 +653,210 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/omnidreams/" class="md-nav__link">
+      <a href="../cosmos3_nano_sim_bimanual/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Cosmos3 Nano Sim Bimanual
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Cosmos3 Nano Sim Auto
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Cosmos3 Nano Sim Auto
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Quick Start
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interactive-drive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interactive Drive
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Interactive Drive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-gpu-interactive-drive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Multi-GPU Interactive Drive
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#demo-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Demo Presets
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Demo Presets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interactive-drive_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interactive Drive
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#samples" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Samples
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Developer Details
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#citation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Citation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../omnidreams/" class="md-nav__link">
         
   
   
@@ -671,7 +883,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/self_forcing/" class="md-nav__link">
+      <a href="../self_forcing/" class="md-nav__link">
         
   
   
@@ -698,7 +910,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/causal_forcing/" class="md-nav__link">
+      <a href="../causal_forcing/" class="md-nav__link">
         
   
   
@@ -725,7 +937,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/causal_wan22/" class="md-nav__link">
+      <a href="../causal_wan22/" class="md-nav__link">
         
   
   
@@ -752,7 +964,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/lingbot_world/" class="md-nav__link">
+      <a href="../lingbot_world/" class="md-nav__link">
         
   
   
@@ -779,7 +991,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/waypoint/" class="md-nav__link">
+      <a href="../waypoint/" class="md-nav__link">
         
   
   
@@ -806,34 +1018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/hy_worldplay/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  HY-WorldPlay
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../../models/sana_wm_streaming/" class="md-nav__link">
+      <a href="../sana_wm_streaming/" class="md-nav__link">
         
   
   
@@ -928,7 +1113,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/sana_wm_streaming/" class="md-nav__link">
+      <a href="../sana_wm_streaming/" class="md-nav__link">
         
   
   
@@ -955,7 +1140,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/wan21/" class="md-nav__link">
+      <a href="../wan21/" class="md-nav__link">
         
   
   
@@ -982,7 +1167,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/wan22/" class="md-nav__link">
+      <a href="../wan22/" class="md-nav__link">
         
   
   
@@ -1009,7 +1194,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/cosmos_predict2/" class="md-nav__link">
+      <a href="../cosmos_predict2/" class="md-nav__link">
         
   
   
@@ -1100,7 +1285,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/flashvsr/" class="md-nav__link">
+      <a href="../flashvsr/" class="md-nav__link">
         
   
   
@@ -1127,7 +1312,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../models/swiftvr/" class="md-nav__link">
+      <a href="../swiftvr/" class="md-nav__link">
         
   
   
@@ -1196,7 +1381,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../demos/" class="md-nav__link ">
+            <a href="../../demos/" class="md-nav__link ">
               
   
   
@@ -1245,6 +1430,8 @@
       
         
       
+        
+      
     
     
     
@@ -1266,7 +1453,7 @@
   <span class="md-ellipsis">
     
   
-  Game-Like Experiences
+  Interactive Experiences
 
     
   </span>
@@ -1282,7 +1469,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Game-Like Experiences
+  Interactive Experiences
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1294,7 +1481,34 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../demos/crazy_robotaxi/" class="md-nav__link">
+      <a href="../../demos/hand_dreams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  HandDreams
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../demos/crazy_robotaxi/" class="md-nav__link">
         
   
   
@@ -1321,7 +1535,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../demos/interactive_drive/" class="md-nav__link">
+      <a href="../../demos/interactive_drive/" class="md-nav__link">
         
   
   
@@ -1358,6 +1572,8 @@
   
     
     
+      
+        
       
         
       
@@ -1416,7 +1632,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../demos/action2v/" class="md-nav__link">
+      <a href="../../demos/action2v/" class="md-nav__link">
         
   
   
@@ -1443,7 +1659,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../demos/cam2v/" class="md-nav__link">
+      <a href="../../demos/cam2v/" class="md-nav__link">
         
   
   
@@ -1470,7 +1686,34 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../demos/t2v/" class="md-nav__link">
+      <a href="../../demos/minimal_t2v/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Minimal T2V
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../demos/t2v/" class="md-nav__link">
         
   
   
@@ -1497,7 +1740,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../demos/v2v/" class="md-nav__link">
+      <a href="../../demos/v2v/" class="md-nav__link">
         
   
   
@@ -1538,8 +1781,6 @@
       
   
   
-    
-  
   
   
     
@@ -1563,21 +1804,18 @@
     
     
       
-        
-        
-      
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../" class="md-nav__link ">
+            <a href="../../documentation/" class="md-nav__link ">
               
   
   
@@ -1594,14 +1832,14 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
         
-          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
             <label class="md-nav__title" for="__nav_5">
               <span class="md-nav__icon md-icon"></span>
               
@@ -1620,7 +1858,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../cli/" class="md-nav__link">
+      <a href="../../documentation/cli/" class="md-nav__link">
         
   
   
@@ -1672,7 +1910,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../demo_api/" class="md-nav__link ">
+            <a href="../../documentation/demo_api/" class="md-nav__link ">
               
   
   
@@ -1716,12 +1954,6 @@
   
     
     
-      
-        
-      
-        
-      
-        
       
         
       
@@ -1780,7 +2012,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../demo_api/guides/create_demo/" class="md-nav__link">
+      <a href="../../documentation/demo_api/guides/create_demo/" class="md-nav__link">
         
   
   
@@ -1807,14 +2039,14 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../demo_api/guides/integrate_model/" class="md-nav__link">
+      <a href="../../documentation/demo_api/guides/integrate_model_adapter_for_a_demo/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-  Integrate a model with a demo
+  Integrate model adapter for a demo
 
     
   </span>
@@ -1834,61 +2066,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../demo_api/guides/configuration/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Demo configuration
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../demo_api/guides/application_slugs/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Application slugs and dispatch
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../demo_api/guides/interactive_serving/" class="md-nav__link">
+      <a href="../../documentation/demo_api/guides/interactive_serving/" class="md-nav__link">
         
   
   
@@ -1915,34 +2093,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../demo_api/guides/local_benchmarks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Local benchmarks
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../../demo_api/guides/profiling/" class="md-nav__link">
+      <a href="../../documentation/demo_api/guides/profiling/" class="md-nav__link">
         
   
   
@@ -2031,7 +2182,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../demo_api/api_reference/application/" class="md-nav__link">
+      <a href="../../documentation/demo_api/api_reference/application/" class="md-nav__link">
         
   
   
@@ -2073,8 +2224,6 @@
                   
   
   
-    
-  
   
   
     
@@ -2095,15 +2244,15 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4" >
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../" class="md-nav__link ">
+            <a href="../../documentation/inferencing_api/" class="md-nav__link ">
               
   
   
@@ -2127,7 +2276,7 @@
           </div>
         
         
-          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_4_label" aria-expanded="true">
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_4_label" aria-expanded="false">
             <label class="md-nav__title" for="__nav_5_4">
               <span class="md-nav__icon md-icon"></span>
               
@@ -2143,14 +2292,10 @@
                   
   
   
-    
   
   
-  
     
     
-      
-        
       
         
       
@@ -2167,11 +2312,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_4_2" >
         
           
           <label class="md-nav__link" for="__nav_5_4_2" id="__nav_5_4_2_label" tabindex="0">
@@ -2192,7 +2337,7 @@
           </label>
         
         
-          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_4_2_label" aria-expanded="true">
+          <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_5_4_2_label" aria-expanded="false">
             <label class="md-nav__title" for="__nav_5_4_2">
               <span class="md-nav__icon md-icon"></span>
               
@@ -2209,7 +2354,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../create_model/" class="md-nav__link">
+      <a href="../../documentation/inferencing_api/guides/create_model/" class="md-nav__link">
         
   
   
@@ -2236,7 +2381,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../stream_inference_pipeline/" class="md-nav__link">
+      <a href="../../documentation/inferencing_api/guides/stream_inference_pipeline/" class="md-nav__link">
         
   
   
@@ -2260,135 +2405,10 @@
                   
   
   
-    
-  
-  
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Latency tuning
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Latency tuning
-
-    
-  </span>
-  
-  
-
-      </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#1-establish-a-reproducible-baseline" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        1. Establish a reproducible baseline
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#2-separate-cold-and-steady-state" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        2. Separate cold and steady state
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#3-read-the-pipeline-stages" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        3. Read the pipeline stages
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-change-one-bottleneck-at-a-time" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        4. Change one bottleneck at a time
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-validate-performance-and-quality-together" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        5. Validate performance and quality together
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
   
   
     <li class="md-nav__item">
-      <a href="../profiling/" class="md-nav__link">
+      <a href="../../documentation/inferencing_api/guides/profiling/" class="md-nav__link">
         
   
   
@@ -2415,7 +2435,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../accelerated/" class="md-nav__link">
+      <a href="../../documentation/inferencing_api/guides/accelerated/" class="md-nav__link">
         
   
   
@@ -2508,34 +2528,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/runtime/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-  Inference Runtime API
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-                
-              
-                
-                  
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../api_reference/pipeline/" class="md-nav__link">
+      <a href="../../documentation/inferencing_api/api_reference/pipeline/" class="md-nav__link">
         
   
   
@@ -2562,7 +2555,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../api_reference/core/" class="md-nav__link">
+      <a href="../../documentation/inferencing_api/api_reference/core/" class="md-nav__link">
         
   
   
@@ -2570,6 +2563,33 @@
     
   
   Core API
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../documentation/inferencing_api/api_reference/accelerated/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Accelerated API
 
     
   </span>
@@ -2617,6 +2637,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2632,7 +2656,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../tools/" class="md-nav__link ">
+            <a href="../../documentation/tools/" class="md-nav__link ">
               
   
   
@@ -2675,7 +2699,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tools/offline_program_packager/" class="md-nav__link">
+      <a href="../../documentation/tools/offline_program_packager/" class="md-nav__link">
         
   
   
@@ -2702,7 +2726,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../tools/build_website/" class="md-nav__link">
+      <a href="../../documentation/tools/build_website/" class="md-nav__link">
         
   
   
@@ -2710,6 +2734,60 @@
     
   
   Build Website
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../documentation/tools/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Testing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../documentation/tools/benchmarking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Benchmarking
 
     
   </span>
@@ -2738,7 +2816,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../troubleshooting/" class="md-nav__link">
+      <a href="../../troubleshooting/" class="md-nav__link">
         
   
   
@@ -2794,7 +2872,7 @@
         
           
           <div class="md-nav__link md-nav__container">
-            <a href="../../../../community/" class="md-nav__link ">
+            <a href="../../community/" class="md-nav__link ">
               
   
   
@@ -2855,10 +2933,83 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-establish-a-reproducible-baseline" class="md-nav__link">
+  <a href="#quick-start" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        1. Establish a reproducible baseline
+        Quick Start
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Start">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interactive-drive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interactive Drive
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Interactive Drive">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#multi-gpu-interactive-drive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Multi-GPU Interactive Drive
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#demo-presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Demo Presets
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Demo Presets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interactive-drive_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Interactive Drive
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#samples" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Samples
       </span>
     </span>
   </a>
@@ -2866,10 +3017,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-separate-cold-and-steady-state" class="md-nav__link">
+  <a href="#developer-details" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        2. Separate cold and steady state
+        Developer Details
       </span>
     </span>
   </a>
@@ -2877,32 +3028,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-read-the-pipeline-stages" class="md-nav__link">
+  <a href="#citation" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        3. Read the pipeline stages
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#4-change-one-bottleneck-at-a-time" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        4. Change one bottleneck at a time
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#5-validate-performance-and-quality-together" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        5. Validate performance and quality together
+        Citation
       </span>
     </span>
   </a>
@@ -2925,7 +3054,7 @@
                   
 
   
-    <a href="https://github.com/NVIDIA/flashdreams/edit/main/docs/source/documentation/inferencing_api/guides/latency_tuning.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/NVIDIA/flashdreams/edit/main/docs/source/models/cosmos3_nano_sim_auto.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-pen" viewBox="0 0 24 24"><path d="M12.659 22H18a2 2 0 0 0 2-2V8a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 14 2H6a2 2 0 0 0-2 2v9.34"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10.378 12.622a1 1 0 0 1 3 3.003L8.36 20.637a2 2 0 0 1-.854.506l-2.867.837a.5.5 0 0 1-.62-.62l.836-2.869a2 2 0 0 1 .506-.853z"/></svg>
     </a>
@@ -2933,117 +3062,120 @@
   
 
 
-  <h1 id="__skip">Latency tuning</h1>
+  <h1 id="__skip">Cosmos3 Nano Sim Auto</h1>
 
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-<p>Tune latency from measurements, not from model size or code shape. Interactive
-latency includes model work, decode, transfer, queueing, and presentation; a
-faster kernel cannot fix a backed-up presenter, and transport changes cannot
-make a slow denoising loop faster.</p>
-<h2 id="1-establish-a-reproducible-baseline">1. Establish a reproducible baseline</h2>
-<p>Fix the model slug, checkpoint, input, seed, resolution, block count, precision,
-compile flags, cache policy, and presentation mode. Record the commit, GPU,
-driver, CUDA, PyTorch, cuDNN, and compiler-cache state.</p>
-<p>Use <code>--stats-path</code> before the application separator. It enables synchronized
-pipeline profiling and writes model-step metrics:</p>
-<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--package<span class="w"> </span>flashdreams-self-forcing<span class="w"> </span>flashdreams-run-v2<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>t2v-self-forcing-wan2.1-t2v-1.3b<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--mode<span class="w"> </span>mp4<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--output-path<span class="w"> </span>artifacts/latency/baseline.mp4<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--stats-path<span class="w"> </span>artifacts/latency/baseline.json<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--timeout<span class="w"> </span>unbound<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--no-ui<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--prompt<span class="w"> </span><span class="s2">&quot;A fixed benchmark prompt.&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--total-blocks<span class="w"> </span><span class="m">14</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--seed<span class="w"> </span><span class="m">1</span>
+<div class="fd-cta-row">
+  <a class="fd-button" href="https://huggingface.co/nvidia/Cosmos3-Nano-Sim-Auto">Checkpoint and model card</a>
+  <a class="fd-button" href="https://research.nvidia.com/labs/cosmos-lab/cosmos3/">Cosmos 3 project</a>
+  <a class="fd-button" href="https://blogs.nvidia.com/blog/open-world-models-physical-ai/">Blog</a>
+</div>
+
+<p>Cosmos3 Nano Sim Auto generates driving video from an HD map, a prompt, and
+opening images. <a href="../../demos/interactive_drive/">Interactive Drive</a> supports one
+or several cameras, scene switching, and optional generated LiDAR.</p>
+<div class="fd-card fd-model-card">
+  <img class="fd-card-preview" src="../../_static/model_clips/cosmos3_nano_sim_auto/drive-7-view-lidar.avif" alt="Seven generated driving camera views and a LiDAR point cloud in a residential scene." />
+</div>
+<figcaption class="tiny-figcaption">
+  FlashDreams Interactive Drive demo in-action, recorded with FlashDreams.
+</figcaption>
+
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="interactive-drive">Interactive Drive</h3>
+<p>Use Linux, Python 3.12, an NVIDIA GPU with <strong>80 GB+ VRAM</strong>, an R580+ driver,
+<strong>100 GB+ free storage</strong>, a CUDA 13 toolkit (<code>nvcc</code>), and a C++ compiler.
+The UI also needs Vulkan with CUDA interop on the server GPU.
+Install <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a> and
+<a href="../../quickstart/#install">clone FlashDreams</a>, then run from its root.
+The checkout must contain <code>integrations_v2/cosmos3_nano_sim_auto</code>.</p>
+<p>Your Hugging Face account needs access to the checkpoint above and
+<a href="https://huggingface.co/datasets/nvidia/omni-dreams-scenes">nvidia/omni-dreams-scenes</a>.</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">HF_TOKEN</span><span class="o">=</span><span class="s2">&quot;&lt;your-hugging-face-token&gt;&quot;</span>
+uv<span class="w"> </span>sync<span class="w"> </span>--frozen<span class="w"> </span>--inexact<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.12<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--package<span class="w"> </span>flashdreams-cosmos3-nano-sim-auto<span class="w"> </span>--extra<span class="w"> </span>interactive-drive<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--package<span class="w"> </span>flashdreams<span class="w"> </span>--group<span class="w"> </span>cuda13
+uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>flashdreams-run-v2<span class="w"> </span>interactive-drive-cosmos3-nano-sim-auto<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--mode<span class="w"> </span>webrtc<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span>
 </code></pre></div>
-<p>Profiling synchronizes CUDA and changes throughput. Use it to attribute stages,
-not as the headline uninstrumented result.</p>
-<h2 id="2-separate-cold-and-steady-state">2. Separate cold and steady state</h2>
-<p>The first steps may include checkpoint loading, text/context encoding,
-<code>torch.compile</code>, kernel autotuning, graph capture, and cache fill. Report at
-least:</p>
-<ul>
-<li>application initialization or preload time;</li>
-<li>first visible chunk latency;</li>
-<li>warmup steps excluded;</li>
-<li>steady-state median and p90 chunk time;</li>
-<li>frames per chunk and effective generated FPS;</li>
-<li>peak and reserved GPU memory.</li>
-</ul>
-<p>Run long enough to reach a full rolling cache. Use fresh processes when
-comparing compile, autotune, or persistent-cache behavior.</p>
-<h2 id="3-read-the-pipeline-stages">3. Read the pipeline stages</h2>
-<p>The base pipeline reports <code>encode_ms</code>, <code>diffuse_ms</code>, <code>decode_ms</code>,
-<code>finalize_ms</code>, <code>total_ms_wo_finalize</code>, and <code>total_ms</code> when those stages are
-present. It also reports allocated, reserved, and peak GPU memory.</p>
+<p>Open <code>http://&lt;server-address&gt;:8080/</code> (<code>localhost</code> for a local browser).</p>
+<p>See <a href="../../demos/interactive_drive/#controls">Interactive Drive controls</a> for
+driving controls. Demo page also contains info on scene selection, rollout resets, and running without the UI (mandatory on GPUs without Vulkan).</p>
+<h4 id="multi-gpu-interactive-drive">Multi-GPU Interactive Drive</h4>
+<p>After installation above, launch one process per GPU on a single host
+(four GPUs shown):</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--no-sync<span class="w"> </span>torchrun<span class="w"> </span>--standalone<span class="w"> </span>--nproc_per_node<span class="o">=</span><span class="m">4</span><span class="w"> </span>--no-python<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>flashdreams-run-v2<span class="w"> </span>interactive-drive-cosmos3-nano-sim-auto<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--mode<span class="w"> </span>webrtc<span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--views<span class="w"> </span><span class="m">7</span><span class="w"> </span>--parallel-decode
+</code></pre></div>
+<p>Set <code>--nproc_per_node</code> to the number of GPUs to use. Rank zero serves
+<code>http://&lt;server-address&gt;:8080/</code>; camera decoding is distributed across GPUs.
+Append <code>--lidar</code> after <code>--parallel-decode</code> to include generated LiDAR.
+See <a href="../../demos/interactive_drive/#controls">Interactive Drive controls</a> for how to drive around in the demo.</p>
+<div class="fd-cta-row">
+  <a class="fd-button" href="#interactive-drive-presets">Demo Presets</a>
+  <a class="fd-button" href="../../demos/interactive_drive/#demo-arguments">Demo Arguments</a>
+</div>
+
+<h2 id="demo-presets">Demo Presets</h2>
+<p><a id="interactive-drive-presets"></a></p>
+<h3 id="interactive-drive_1">Interactive Drive</h3>
 <table>
 <thead>
 <tr>
-<th>Dominant observation</th>
-<th>Investigate first</th>
+<th>Preset</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>encode_ms</code></td>
-<td>control preprocessing, VAE encoder, input layout/copies</td>
-</tr>
-<tr>
-<td><code>diffuse_ms</code></td>
-<td>denoising steps, attention/GEMM backend, compile, CUDA graphs, model cache</td>
-</tr>
-<tr>
-<td><code>decode_ms</code></td>
-<td>decoder choice, streaming cache, layout conversion, memory format</td>
-</tr>
-<tr>
-<td><code>finalize_ms</code></td>
-<td>K/V maintenance, synchronization, overlap opportunity</td>
-</tr>
-<tr>
-<td>Pipeline fast but display late</td>
-<td>device-to-host transfer, encoding, queue depth, pacing, network</td>
-</tr>
-<tr>
-<td>Latency grows over time</td>
-<td>unbounded cache/history, allocator growth, presenter backlog</td>
+<td><code>interactive-drive-cosmos3-nano-sim-auto</code></td>
+<td>One front-wide RGB view by default; prepared-scene driving with optional multiview and LiDAR.</td>
 </tr>
 </tbody>
 </table>
-<p>Measure transfer and presentation separately when they are not represented by
-pipeline metrics. For interactive generation, also report estimated
-input-to-visible latency rather than only model FPS.</p>
-<h2 id="4-change-one-bottleneck-at-a-time">4. Change one bottleneck at a time</h2>
-<p>Prefer the smallest option that addresses the measured hot stage:</p>
+<h2 id="samples">Samples</h2>
+<div class="model-media-grid zoomable">
+  <div class="fd-card fd-model-card">
+    <img class="fd-card-preview" src="../../_static/model_clips/cosmos3_nano_sim_auto/drive-7-view.avif" alt="Seven generated camera views of the same residential drive." />
+    <figcaption class="tiny-figcaption">Seven RGB views.</figcaption>
+  </div>
+  <div class="fd-card fd-model-card">
+    <img class="fd-card-preview" src="../../_static/model_clips/cosmos3_nano_sim_auto/drive-1-view-lidar.avif" alt="Generated front-camera video beside its LiDAR point cloud." />
+    <figcaption class="tiny-figcaption">One RGB view and LiDAR.</figcaption>
+  </div>
+  <div class="fd-card fd-model-card">
+    <img class="fd-card-preview" src="../../_static/model_clips/cosmos3_nano_sim_auto/drive-7-view-lidar.avif" alt="Seven generated driving cameras and a LiDAR point cloud." />
+    <figcaption class="tiny-figcaption">Seven RGB views and LiDAR.</figcaption>
+  </div>
+</div>
+
+<h2 id="developer-details">Developer Details</h2>
 <ul>
-<li>reduce resolution, denoising steps, or context only when the quality tradeoff
-  is acceptable;</li>
-<li>bound and preallocate K/V caches before compiler or graph work;</li>
-<li>compile the smallest fixed-shape compute region;</li>
-<li>capture CUDA graphs only with stable shapes, pointers, and stream ordering;</li>
-<li>compare attention backends on the target GPU instead of assuming portability;</li>
-<li>keep the quality decoder as the reference when evaluating a faster decoder;</li>
-<li>tune ordered pacing and bounded queues after generation gets faster.</li>
+<li><a href="https://github.com/NVIDIA/flashdreams/tree/main/integrations_v2/cosmos3_nano_sim_auto">Integration source and setup details</a></li>
+<li><a href="https://github.com/NVIDIA/flashdreams/blob/main/integrations_v2/cosmos3_nano_sim_auto/LIDAR.md">LiDAR formats and timing</a></li>
+<li><a href="https://research.nvidia.com/labs/cosmos-lab/cosmos3/technical-report.pdf">Cosmos 3 technical report</a></li>
 </ul>
-<p>Keep optimized paths opt-in until their startup, reset, scene-switch, and
-shape-change behavior is validated. Hardware-specific results belong on the
-model page, not as universal defaults in this generic guide.</p>
-<h2 id="5-validate-performance-and-quality-together">5. Validate performance and quality together</h2>
-<p>Use the same latent for decoder comparisons, compare cache changes before and
-after the rolling-window boundary, and use controlled short schedules for
-attention or compile changes. Preserve the fallback path.</p>
-<p>A defensible result includes the exact command and environment, warmup policy,
-median and p90 totals, stage timings, memory, output artifacts, quality method,
-and whether the candidate is recommended, useful only as an opt-in, rejected,
-or still unvalidated.</p>
-<p>For repeatable command execution and reports, use the
-<a href="../../../demo_api/guides/local_benchmarks/">local benchmark guide</a>. For low-level
-attention and quantization options, continue with
-<a href="../accelerated/">Accelerated building blocks</a> only after profiling identifies
-that stage as the bottleneck.</p>
+<hr>
+
+<h2 id="citation">Citation</h2>
+<p>If you use Cosmos3 Nano Sim Auto, cite the original work:</p>
+<p>NVIDIA et al. <a href="https://arxiv.org/abs/2606.02800"><strong>Cosmos 3: Omnimodal World Models for Physical AI</strong></a>.
+2026. arXiv:2606.02800. <a href="https://doi.org/10.48550/arXiv.2606.02800">DOI: 10.48550/arXiv.2606.02800</a>.</p>
+<div class="highlight"><pre><span></span><code><span class="nc">@misc</span><span class="p">{</span><span class="nl">nvidia2026cosmos3omnimodalworld</span><span class="p">,</span>
+<span class="w">      </span><span class="na">title</span><span class="p">=</span><span class="s">{Cosmos 3: Omnimodal World Models for Physical AI}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">author</span><span class="p">=</span><span class="s">{{NVIDIA} and Aditi and Niket Agarwal and Arslan Ali and Jon Allen and Martin Antolini and Adeline Aubame and Alisson Azzolini and Junjie Bai and Maciej Bala and Yogesh Balaji and Josh Bapst and Aarti Basant and Mukesh Beladiya and Mohammad Qazim Bhat and Zaid Pervaiz Bhat and Dan Blick and Vanni Brighella and Han Cai and Tiffany Cai and Eric Cameracci and Jiaxin Cao and Yulong Cao and Mark Carlson and Carlos Casanova and Ting-Yun Chang and Yan Chang and Yu-Wei Chao and Prithvijit Chattopadhyay and Roshan Chaudhari and Chieh-Yun Chen and Junyu Chen and Ke Chen and Qizhi Chen and Wenkai Chen and Xiaotong Chen and Yu Chen and An-Chieh Cheng and Click Cheng and Xiu Chia and Jeana Choi and Chaeyeon Chung and Wenyan Cong and Yin Cui and Magdalena Dadela and Nalin Dadhich and Wenliang Dai and Joyjit Daw and Alperen Degirmenci and Rodrigo Vieira Del Monte and Robert Denomme and Sameer Dharur and Marco Di Lucca and Ke Ding and Wenhao Ding and Yifan Ding and Yuzhu Dong and Nicole Drumheller and Yilun Du and Aigul Dzhumamuratova and Aleksandr Efitorov and Hamid Eghbalzadeh and Naomi Eigbe and Imad El Hanafi and Hassan Eslami and Benedikt Falk and Jiaojiao Fan and Jim Fan and Amol Fasale and Sergiy Fefilatyev and Liang Feng and Francesco Ferroni and Sanja Fidler and Xiao Fu and Vikram Fugro and Prashant Gaikwad and TJ Galda and Katelyn Gao and Yihuai Gao and Wenhang Ge and Sreyan Ghosh and Arushi Goel and Vivek Goel and Akash Gokul and Rama Govindaraju and Jinwei Gu and Miguel Guerrero and Elfie Guo and Aryaman Gupta and Siddharth Gururani and Hugo Hadfield and Song Han and Ankur Handa and Zekun Hao and Mohammad Harrim and Ali Hassani and Nathan Hayes-Roth and Yufan He and Chris Helvig and Cyrus Hogg and Madison Huang and Michael Huang and Sophia Huang and Yufan Huang and Jacob Huffman and DeLesley Hutchins and Suneel Indupuru and Boris Ivanovic and Arihant Jain and Joel Jang and Ryan Ji and Yanan Jian and Dongfu Jiang and Jingyi Jin and Atharva Joshi and Nikhilesh Joshi and Pranjali Joshi and Andy Ju and Jaehun Jung and Weiwei Kang and Scott Kassekert and Jan Kautz and Ashna Khetan and Julia Kiczka and Slawek Kierat and Gwanghyun Kim and Kuno Kim and Sunny Kim and Kezhi Kong and Xin Kong and Zhifeng Kong and Tomasz Kornuta and Egor Krivov and Hui Kuang and Saurav Kumar and Chia-Wen Kuo and George Kurian and Wojciech Kutak and JF Lafleche and Himangshu Lahkar and Omar Laymoun and Jayjun Lee and Sanggil Lee and Gabriele Leone and Boyi Li and Freya Li and Jiajun Li and Jinfeng Li and Ling Li and Pengcheng Li and Shangru Li and Tingle Li and Xiaolong Li and Xuan Li and Zhaoshuo Li and Zhiqi Li and Hao Liang and Maosheng Liao and Chen-Hsuan Lin and Tsung-Yi Lin and Ming-Yu Liu and Sifei Liu and Zihan Liu and Hai Loc Lu and Xiangyu Lu and Alice Luo and Ruipu Luo and Wenjie Luo and Jiangran Lyu and Martin Ding Ma and Nic Ma and Qianli Ma and Dawid Majchrowski and Louis Marcoux and Miguel Martin and Qing Miao and Ashkan Mirzaei and Shreyas Misra and Kaichun Mo and Durra Mohsin and Hyejin Moon and Pawel Morkisz and Saeid Motiian and Kirill Motkov and Seungjun Nah and Yashraj Narang and Deepak Narayanan and Thabang Ngazimbi and Julian Ouyang and Shubham Pachori and David Page and Yatian Pang and Sehwi Park and Mahesh Patekar and Mostofa Patwary and Marco Pavone and Trung Pham and Wei Ping and Soha Pouya and Shrimai Prabhumoye and Varun Praveen and Delin Qu and Hesam Rabeti and Morteza Ramezanali and Marilyn Reeb and Xuanchi Ren and Kristen Rumley and Wojciech Rymer and Jun Saito and Yeongho Seol and John Shao and Piyush Shekdar and Tianwei Shen and Humphrey Shi and Min Shi and Stella Shi and Kevin Shih and Mohammad Shoeybi and Mateusz Sieniawski and Shuran Song and Alexander Sotelo and Amir Sotoodeh and Sunil Srinivasa and Vignesh Srinivasakumar and Bartosz Stefaniak and Rahul Heinrich Steiger and Shangkun Sun and Jiaxiang Tang and Shitao Tang and Yangyang Tang and Yue Tang and Tolou Tavakkoli and Kayley Ting and Krzysztof Tomala and Wei-Cheng Tseng and Jibin Varghese and Sergei Vasilev and Thomas Volk and Raju Wagwani and Roger Waleffe and Andrew Z. Wang and Boxiang Wang and Haoxiang Wang and Qiao Wang and Shihao Wang and Shijie Wang and Ting-Chun Wang and Yan Wang and Yu Wang and Rohit Watve and David Wehr and Fangyin Wei and Xinshuo Weng and Jay Zhangjie Wu and Kedi Wu and Hongchi Xia and Summer Xiao and Tianjun Xiao and Kevin Xie and Daguang Xu and Jiashu Xu and Mengyao Xu and Ruqing Xu and Xingqian Xu and Yao Xu and Dinghao Yang and Dong Yang and Hans Yang and Xiaodong Yang and Xuning Yang and Yichu Yang and Yurong You and Zhiding Yu and Hao Yuan and Simon Yuen and Xiaohui Zeng and Pengcuo Zeren and Cindy Zha and Haotian Zhang and Jenny Zhang and Jing Zhang and Liangkai Zhang and Paris Zhang and Shun Zhang and Xuanmeng Zhang and Zhizheng Zhang and Ann Zhao and Yilin Zhao and Yuliya Zhautouskaya and Charles Zhou and Fengzhe Zhou and Shilin Zhu and Yuke Zhu and Dima Zhylko and Artur Zolkowski}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">year</span><span class="p">=</span><span class="s">{2026}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">eprint</span><span class="p">=</span><span class="s">{2606.02800}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">archivePrefix</span><span class="p">=</span><span class="s">{arXiv}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">primaryClass</span><span class="p">=</span><span class="s">{cs.CV}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">doi</span><span class="p">=</span><span class="s">{10.48550/arXiv.2606.02800}</span><span class="p">,</span>
+<span class="w">      </span><span class="na">url</span><span class="p">=</span><span class="s">{https://arxiv.org/abs/2606.02800}</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
 
 
 
@@ -3078,7 +3210,7 @@ that stage as the bottleneck.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../stream_inference_pipeline/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Stream inference pipeline">
+          <a href="../cosmos3_nano_sim_bimanual/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Cosmos3 Nano Sim Bimanual">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -3088,20 +3220,20 @@ that stage as the bottleneck.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Stream inference pipeline
+                Cosmos3 Nano Sim Bimanual
               </div>
             </div>
           </a>
         
         
           
-          <a href="../profiling/" class="md-footer__link md-footer__link--next" aria-label="Next: Profiling a pipeline">
+          <a href="../omnidreams/" class="md-footer__link md-footer__link--next" aria-label="Next: NVIDIA OmniDreams">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Profiling a pipeline
+                NVIDIA OmniDreams
               </div>
             </div>
             <div class="md-footer__button md-icon">
@@ -3137,12 +3269,12 @@ that stage as the bottleneck.</p>
       
         
         
-      <script id="__config" type="application/json">{"annotate":null,"base":"../../../..","features":["content.action.edit","navigation.indexes","navigation.footer","navigation.tabs","navigation.tabs.sticky"],"redirect":null,"search":"../../../../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["content.action.edit","navigation.indexes","navigation.footer","navigation.tabs","navigation.tabs.sticky"],"redirect":null,"search":"../../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
     
     
-      <script src="../../../../assets/javascripts/bundle.67a597eb.min.js"></script>
+      <script src="../../assets/javascripts/bundle.67a597eb.min.js"></script>
       
-        <script src="../../../../javascripts/katex.js"></script>
+        <script src="../../javascripts/katex.js"></script>
       
         <script src="https://unpkg.com/katex@0/dist/katex.min.js"></script>
       
